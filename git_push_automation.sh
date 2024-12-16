@@ -375,31 +375,57 @@ function check_permissions() {
 
 function check_git_repo() {
     if [ ! -d ".git" ]; then
-        echo_color "$RED" "Erreur : ce répertoire n'est pas un dépôt Git."
-        log_action "ERROR" "Ce répertoire n'est pas un dépôt Git."
-        return 1
+        echo_color "$RED" "Ce répertoire n'est pas un dépôt Git."
+        log_action "ERROR" "Répertoire sans dépôt Git."
+
+        # Proposer d'initialiser un dépôt Git et éventuellement ajouter un remote
+        echo_color "$YELLOW" "Voulez-vous initialiser un dépôt Git ici ? (y/n)"
+        read -r INIT_ANSWER
+        if [ "$INIT_ANSWER" == "y" ]; then
+            if ! ensure_git_repository; then
+                echo_color "$RED" "Impossible de continuer sans dépôt Git."
+                log_action "ERROR" "Initialisation du dépôt Git échouée."
+                return 1
+            else
+                log_action "INFO" "Dépôt Git initialisé avec succès."
+            fi
+        else
+            echo_color "$RED" "Sans dépôt Git, le script ne peut pas continuer."
+            log_action "ERROR" "Refus d'initialisation du dépôt Git."
+            return 1
+        fi
+    else
+        log_action "INFO" "Vérification du dépôt Git réussie."
     fi
-    log_action "INFO" "Vérification du dépôt Git réussie."
+    return 0
 }
 
 function check_user_email() {
     local email
     email=$(git config --get user.email)
     if [ -z "$email" ]; then
-        echo_color "$YELLOW" "Aucune adresse e-mail configurée pour Git."
+        echo_color "$YELLOW" "Aucune adresse e-mail Git n'est configurée."
         echo_color "$YELLOW" "Entrez une adresse e-mail pour configurer Git globalement :"
         read -r email
         if [ -z "$email" ]; then
             echo_color "$RED" "Erreur : L'adresse e-mail ne peut pas être vide."
-            log_action "ERROR" "L'adresse e-mail saisie est vide."
+            log_action "ERROR" "Aucune adresse e-mail fournie."
             return 1
         fi
-        git config --global user.email "$email"
-        log_action "INFO" "Adresse e-mail configurée globalement : $email"
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : git config --global user.email '$email'"
+            log_action "INFO" "Simulation: configuration user.email."
+        else
+            git config --global user.email "$email"
+            log_action "INFO" "Adresse e-mail configurée globalement : $email"
+            echo_color "$GREEN" "Adresse e-mail Git définie : $email"
+        fi
     else
         log_action "INFO" "Utilisateur actuel : $email"
     fi
+    return 0
 }
+
 
 ###############################################################################
 # FONCTIONS UTILES (backup, add, tests, etc.)
@@ -1717,20 +1743,27 @@ function handle_submodules() {
 ###############################################################################
 function generate_commit_stats() {
     echo_color "$BLUE" "Génération de statistiques de commits..."
-    # Top 3 des auteurs sur les 30 derniers commits
-    echo "## Statistiques de commits" > commit_stats.md
-    echo "### Top Auteurs (30 derniers commits):" >> commit_stats.md
-    git shortlog -n -s -e -30 | head -n 3 >> commit_stats.md
 
-    # Compter le nombre de commits par type (Tâche, Bug, etc.) sur les 30 derniers commits
-    echo "### Nombre de commits par type (30 derniers):" >> commit_stats.md
+    # Créer le répertoire ./stats s'il n'existe pas déjà
+    mkdir -p "./stats"
+
+    local stats_file="./stats/commit_stats.md"
+
+    # Top 3 des auteurs sur les 30 derniers commits
+    echo "## Statistiques de commits" > "$stats_file"
+    echo "### Top Auteurs (30 derniers commits):" >> "$stats_file"
+    git shortlog -n -s -e -30 | head -n 3 >> "$stats_file"
+
+    # Compter le nombre de commits par type sur les 30 derniers commits
+    echo "### Nombre de commits par type (30 derniers):" >> "$stats_file"
     for t in "Tâche" "Bug" "Amélioration" "Refactor"; do
         count=$(git log -30 --pretty=%s | grep "^$t:" | wc -l)
-        echo "- $t : $count" >> commit_stats.md
+        echo "- $t : $count" >> "$stats_file"
     done
 
-    log_action "INFO" "Statistiques de commits générées dans commit_stats.md"
+    log_action "INFO" "Statistiques de commits générées dans $stats_file"
 }
+
 
 ##############################################################################
 # 4. Intégration avec un Système de Tickets
@@ -1967,11 +2000,21 @@ function default_actions_sequence() {
 
 function main_without_repo_dir() {
     echo_color "$GREEN" "Début opérations sur dépôt courant."
-    check_git_repo || exit 1
+    # Vérifier le dépôt git, sinon proposer de l'initialiser
+    if ! check_git_repo; then
+        echo_color "$YELLOW" "Le répertoire n'est pas un dépôt Git. Voulez-vous l'initialiser ?"
+        # Appel de la fonction ensure_git_repository (nouvelle fonction avancée)
+        # Cette fonction permettra à l'utilisateur d'initialiser un dépôt s'il le souhaite
+        if ! ensure_git_repository; then
+            echo_color "$RED" "Impossible de continuer sans dépôt Git."
+            exit 1
+        fi
+    fi
+
     check_user_email || exit 1
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$YELLOW" "Simulation activée."
+        echo_color "$YELLOW" "Mode simulation activé."
     fi
 
     # Appeler manage_hooks si MANAGE_HOOKS == "y"
@@ -2009,11 +2052,68 @@ function main_without_repo_dir() {
         export_patches
     fi
 
-    # On ne déclenche CI et log release qu'après le push, donc ces fonctions seront appelées post-push
-    # On fera trigger_ci et log_release après perform_push dans ce cas (à adapter selon la logique voulue)
-    # Idem pour le nettoyage des branches: après la séquence par défaut, par exemple dans collect_feedback.
-
+    # Lancer la séquence d'actions par défaut
     default_actions_sequence
+}
+
+# Ajout de la fonction ensure_git_repository
+function ensure_git_repository() {
+    # Vérifier si c'est déjà un dépôt Git
+    if [ -d ".git" ]; then
+        log_action "INFO" "Le répertoire actuel est déjà un dépôt Git."
+        return 0
+    fi
+
+    # Pas un dépôt Git, demander à l'utilisateur s'il veut en créer un
+    echo_color "$YELLOW" "Ce répertoire n'est pas un dépôt Git. Voulez-vous l'initialiser ? (y/n)"
+    read -r INIT_REPO_ANSWER
+    if [ "$INIT_REPO_ANSWER" == "y" ]; then
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : git init"
+            log_action "INFO" "Simulation: initialisation du dépôt Git."
+        else
+            git init || {
+                echo_color "$RED" "Échec de l'initialisation du dépôt."
+                log_action "ERROR" "Échec git init."
+                return 1
+            }
+            log_action "INFO" "Dépôt Git initialisé avec succès."
+            echo_color "$GREEN" "Dépôt Git initialisé."
+
+            # Proposer d'ajouter un dépôt distant
+            echo_color "$YELLOW" "Souhaitez-vous ajouter un dépôt distant maintenant ? (y/n)"
+            read -r ADD_REMOTE_ANSWER
+            if [ "$ADD_REMOTE_ANSWER" == "y" ]; then
+                echo_color "$YELLOW" "Entrez l'URL du dépôt distant (ex: git@github.com:user/project.git ou https://...):"
+                read -r REMOTE_URL
+                if [ -n "$REMOTE_URL" ]; then
+                    if [ "$DRY_RUN" == "y" ]; then
+                        echo_color "$GREEN" "Simulation : git remote add origin '$REMOTE_URL'"
+                        log_action "INFO" "Simulation: ajout du remote origin."
+                    else
+                        git remote add origin "$REMOTE_URL" || {
+                            echo_color "$RED" "Échec de l'ajout du dépôt distant."
+                            log_action "ERROR" "Échec git remote add."
+                            return 1
+                        }
+                        log_action "INFO" "Dépôt distant ajouté : $REMOTE_URL"
+                        echo_color "$GREEN" "Dépôt distant 'origin' ajouté avec succès."
+                    fi
+                else
+                    echo_color "$RED" "Aucune URL fournie, pas d'ajout de dépôt distant."
+                    log_action "WARN" "Aucune URL de remote fournie."
+                fi
+            else
+                log_action "INFO" "L'utilisateur a choisi de ne pas ajouter de dépôt distant maintenant."
+            fi
+        fi
+    else
+        echo_color "$RED" "Ce répertoire n'étant pas un dépôt Git et l'initialisation étant refusée, le script ne peut pas continuer."
+        log_action "ERROR" "Pas un dépôt Git, initialisation refusée."
+        return 1
+    fi
+
+    return 0
 }
 
 function main_menu() {

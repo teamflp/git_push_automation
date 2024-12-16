@@ -36,7 +36,7 @@ Si ces outils ne sont pas disponibles, le script tentera une dégradation douce 
 1. **Cloner le script** :
 
    ```bash
-   git clone https://votre_repo/git_push_automation.git
+   git clone https://github.com/teamflp/git_push_automation.git
    cd git_push_automation
    ```
 
