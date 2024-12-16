@@ -1,0 +1,118 @@
+# git_push_automation_config.example
+#
+# Ce fichier est un exemple de configuration qui sera chargé par le script
+# d'automatisation Git. Copiez ce fichier en `git_push_automation_config`
+# (sans le .example) et modifiez-le selon vos besoins.
+#
+# Chaque variable ici définie permet de personnaliser le comportement du script :
+# - Plateforme cible (GitLab, GitHub, Bitbucket, etc.)
+# - Notifications (Slack, Mattermost, etc.)
+# - Destinataires e-mail
+# - Jetons d'accès et IDs de projet pour la création de releases
+# - Commandes de tests, qualité, CI, etc.
+#
+# N'oubliez pas de recharger le script ou de relancer la commande après modification:
+# source ./git_push_automation_config
+
+##########################################
+# PLATEFORME
+##########################################
+# Définissez la plateforme cible : "gitlab", "github", "bitbucket"
+# La plateforme choisie déterminera l'API utilisée pour notifier et créer des releases.
+export PLATFORM="gitlab"  # Valeurs possibles: gitlab, github, bitbucket
+
+##########################################
+# SLACK
+##########################################
+# Pour envoyer des notifications Slack après le push.
+export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
+export SLACK_CHANNEL="#my-channel-here"
+export SLACK_USERNAME="webhookbot"
+export SLACK_ICON_EMOJI=":ghost:"
+
+##########################################
+# GITLAB
+##########################################
+# Si PLATFORM=gitlab:
+export GITLAB_PROJECT_ID="12345678" # TODO: L'ID du projet GitLab
+export GITLAB_TOKEN="votre_jeton_d_acces_personnel" # TODO: Jeton GitLab avec scope API
+export GITLAB_GROUP_NAME="mon-groupe" # Facultatif
+
+##########################################
+# GITHUB (si PLATFORM=github)
+##########################################
+# export GITHUB_TOKEN="ghp_votreTokenGitHubIci"  # TODO: Token GitHub
+# export GITHUB_REPO="username/myrepo"           # TODO: Dépôt GitHub (owner/repo)
+
+##########################################
+# BITBUCKET (si PLATFORM=bitbucket)
+##########################################
+# export BITBUCKET_WORKSPACE="monworkspace"
+# export BITBUCKET_REPO_SLUG="monrepo"
+# export BITBUCKET_USER="monuser"
+# export BITBUCKET_APP_PASSWORD="monAppPassword"
+
+##########################################
+# EMAIL
+##########################################
+# Adresses e-mail séparées par des virgules
+export EMAIL_RECIPIENTS="dev-team@example.com,qa-team@example.com"
+
+# Mode silencieux pour le mailer (pas de question)
+# export SILENT_INSTALL=1
+
+##########################################
+# MATTERMOST (optionnel)
+##########################################
+# Pour envoyer des notifications Mattermost
+# export MATTERMOST_WEBHOOK_URL="https://mattermost.example.com/hooks/XXXXXX"
+
+##########################################
+# CUSTOM WEBHOOK
+##########################################
+# Pour un webhook personnalisé supplémentaire
+# export CUSTOM_WEBHOOK_URL="https://example.com/mycustomwebhook"
+
+##########################################
+# TESTS
+##########################################
+# Commande à exécuter avant le commit/push pour valider le code.
+# Si cette commande retourne 0, tout va bien, sinon le push est annulé.
+# Ex: TEST_COMMAND="./run_tests.sh"
+export TEST_COMMAND="./run_tests.sh"
+
+##########################################
+# QUALITÉ/LINT
+##########################################
+# Commande pour exécuter un linter ou un check de qualité avant le commit/push (si -q)
+# Ex: QUALITY_COMMAND="npm run lint"
+export QUALITY_COMMAND="npm run lint"
+
+##########################################
+# CI/CD
+##########################################
+# URL pour déclencher un pipeline CI après le push (facultatif)
+# Ex: CI_TRIGGER_URL="https://ci.example.com/trigger?token=XYZ"
+export CI_TRIGGER_URL=""
+
+##########################################
+# TICKETS
+##########################################
+# Base URL du système de tickets (ex: JIRA)
+# Si le commit message contient un pattern (ex: ABC-123), un lien vers le ticket sera créé.
+# Ex: export TICKET_BASE_URL="https://jira.example.com/browse/"
+export TICKET_BASE_URL="https://jira.example.com/browse/"
+
+##########################################
+# VERBOSITÉ ET DRY-RUN
+##########################################
+# Pour voir plus d'infos:
+# export VERBOSE="y"
+# Pour forcer le mode dry-run globalement:
+# export DRY_RUN="y"
+
+##########################################
+# PLATEFORME ET MULTI-REPO
+##########################################
+# Si vous souhaitez gérer plusieurs dépôts en même temps:
+# export MULTI_REPO_DIR="/chemin/vers/repertoires"
