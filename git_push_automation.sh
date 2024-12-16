@@ -1062,7 +1062,7 @@ function create_gitlab_release() {
     fi
 }
 
-# GITHUB
+# NOTIFICATION GITHUB
 function notify_github() {
     local message="$1"
     local commit_hash="$2"
