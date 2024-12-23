@@ -1,6 +1,7 @@
-/.vscode
-/.idea
-/git_push_automation_config
+/.vscode/
+/.idea/
+/.env
+/.env.git_push_automation
 /git_push_automation.log
 /backup/
 /reports/

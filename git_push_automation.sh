@@ -13,7 +13,7 @@
 # - Rapport HTML enrichi incluant tests, qualité, stats.
 # - Messages d'aide et gestion fine des erreurs.
 #
-# Configuration via un fichier git_push_automation_config (exemple fourni).
+# Configuration via un fichier .env_git_push_automation (exemple fourni).
 #
 # Les développeurs peuvent utiliser ce script en ligne de commande avec différentes
 # options, ou en mode par défaut interactif.
@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="3.1.0"
+SCRIPT_VERSION="1.1.0"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
@@ -320,20 +320,18 @@ function process_options() {
 # CHARGEMENT DE LA CONFIG ET CHECK
 ###############################################################################
 function load_config() {
-    local config_file="./git_push_automation_config"
-    local global_config_file="$HOME/.git_push_automation_config"
+    local env_file="./.env.git_push_automation"
 
-    if [ -f "$global_config_file" ]; then
-        source "$global_config_file"
-        log_action "INFO" "Fichier de configuration global chargé : $global_config_file"
-    fi
-
-    if [ -f "$config_file" ]; then
-        source "$config_file"
-        log_action "INFO" "Fichier de configuration local chargé : $config_file"
+    if [ -f "$env_file" ]; then
+        # Activer l'export automatique des variables lues
+        set -a
+        source "$env_file"
+        set +a
+        log_action "INFO" "Fichier de configuration chargé : $env_file"
     else
-        echo_color "$YELLOW" "Le fichier de configuration local $config_file est manquant."
-        log_action "WARN" "Fichier de configuration local manquant."
+        echo_color "$YELLOW" "Le fichier de configuration $env_file est manquant."
+        log_action "WARN" "Fichier de configuration $env_file manquant."
+        exit 1
     fi
 }
 
@@ -375,57 +373,31 @@ function check_permissions() {
 
 function check_git_repo() {
     if [ ! -d ".git" ]; then
-        echo_color "$RED" "Ce répertoire n'est pas un dépôt Git."
-        log_action "ERROR" "Répertoire sans dépôt Git."
-
-        # Proposer d'initialiser un dépôt Git et éventuellement ajouter un remote
-        echo_color "$YELLOW" "Voulez-vous initialiser un dépôt Git ici ? (y/n)"
-        read -r INIT_ANSWER
-        if [ "$INIT_ANSWER" == "y" ]; then
-            if ! ensure_git_repository; then
-                echo_color "$RED" "Impossible de continuer sans dépôt Git."
-                log_action "ERROR" "Initialisation du dépôt Git échouée."
-                return 1
-            else
-                log_action "INFO" "Dépôt Git initialisé avec succès."
-            fi
-        else
-            echo_color "$RED" "Sans dépôt Git, le script ne peut pas continuer."
-            log_action "ERROR" "Refus d'initialisation du dépôt Git."
-            return 1
-        fi
-    else
-        log_action "INFO" "Vérification du dépôt Git réussie."
+        echo_color "$RED" "Erreur : ce répertoire n'est pas un dépôt Git."
+        log_action "ERROR" "Ce répertoire n'est pas un dépôt Git."
+        return 1
     fi
-    return 0
+    log_action "INFO" "Vérification du dépôt Git réussie."
 }
 
 function check_user_email() {
     local email
     email=$(git config --get user.email)
     if [ -z "$email" ]; then
-        echo_color "$YELLOW" "Aucune adresse e-mail Git n'est configurée."
+        echo_color "$YELLOW" "Aucune adresse e-mail configurée pour Git."
         echo_color "$YELLOW" "Entrez une adresse e-mail pour configurer Git globalement :"
         read -r email
         if [ -z "$email" ]; then
             echo_color "$RED" "Erreur : L'adresse e-mail ne peut pas être vide."
-            log_action "ERROR" "Aucune adresse e-mail fournie."
+            log_action "ERROR" "L'adresse e-mail saisie est vide."
             return 1
         fi
-        if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : git config --global user.email '$email'"
-            log_action "INFO" "Simulation: configuration user.email."
-        else
-            git config --global user.email "$email"
-            log_action "INFO" "Adresse e-mail configurée globalement : $email"
-            echo_color "$GREEN" "Adresse e-mail Git définie : $email"
-        fi
+        git config --global user.email "$email"
+        log_action "INFO" "Adresse e-mail configurée globalement : $email"
     else
         log_action "INFO" "Utilisateur actuel : $email"
     fi
-    return 0
 }
-
 
 ###############################################################################
 # FONCTIONS UTILES (backup, add, tests, etc.)
@@ -614,7 +586,7 @@ function handle_branch() {
         PS3="Sélectionnez une branche : "
         select BRANCH_NAME in "${branches[@]}"; do
             if [ -n "$BRANCH_NAME" ]; then
-                BRANCH_NAME=$(echo "$BRANCH_NAME" | xargs)
+                BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 if [ "$DRY_RUN" == "y" ]; then
                     echo_color "$GREEN" "Simulation : git checkout '$BRANCH_NAME'"
                 else
@@ -1062,7 +1034,7 @@ function create_gitlab_release() {
     fi
 }
 
-# NOTIFICATION GITHUB
+# GITHUB
 function notify_github() {
     local message="$1"
     local commit_hash="$2"
@@ -1364,6 +1336,38 @@ function send_notification() {
         log_action "INFO" "SLACK_WEBHOOK_URL non défini, pas de notif Slack."
     fi
 
+    #### Notification GitHub ####
+    if [ -n "$GITHUB_TOKEN" ]; then
+        local github_message="$common_message"
+        local github_api_url="https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments"
+
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : Notification GitHub."
+            echo "POST $github_api_url"
+            echo "Data: $github_message"
+        else
+            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" --request POST \
+                --header "Authorization: token $GITHUB_TOKEN" \
+                --header "Content-Type: application/json" \
+                --data "{\"body\": \"$github_message\"}" \
+                "$github_api_url")
+
+            http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+            body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+
+            if [ "$http_status" -ne 201 ]; then
+                echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
+                echo_color "$RED" "Réponse : $body"
+                log_action "ERROR" "GitHub notif fail $http_status $body"
+            else
+                echo_color "$GREEN" "Notification GitHub OK."
+                log_action "INFO" "Notif GitHub OK."
+            fi
+        fi
+    else
+        log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
+    fi
+
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
         local gitlab_message="$common_message"
@@ -1456,6 +1460,9 @@ Commit: \`$commit_hash\`.
     else
         log_action "INFO" "MATTERMOST_WEBHOOK_URL non défini."
     fi
+
+    echo ""
+    echo_color "$GREEN" "------------- FIN DU RAPPORT -------------"
 }
 
 function send_custom_webhook() {
@@ -1477,7 +1484,7 @@ function send_custom_webhook() {
 }
 
 function generate_report() {
-    # AJOUT: Générer un rapport HTML local plus riche
+    # AJOUT: Générer un rapport HTML local plus professionnel
     local report_file="./reports/report_$(date '+%Y%m%d_%H%M%S').html"
 
     # Créer le répertoire parent du fichier de rapport
@@ -1485,17 +1492,31 @@ function generate_report() {
 
     local email
     email=$(git config --get user.email)
+
+    # Dates plus lisibles (local)
     local commit_hash
     commit_hash=$(git rev-parse HEAD)
     local commit_msg
     commit_msg=$(git log -1 --pretty=%B)
+    local commit_author
+    commit_author=$(git log -1 --pretty="%an")
+    local commit_author_email
+    commit_author_email=$(git log -1 --pretty="%ae")
+    local commit_date
+    commit_date=$(git log -1 --date=local --pretty="%cd")
+    local committer
+    committer=$(git log -1 --pretty="%cn")
+    local committer_email
+    committer_email=$(git log -1 --pretty="%ce")
+    local committer_date
+    committer_date=$(git log -1 --date=local --pretty="%cd")
+
     local branch_url
     branch_url=$(git config --get remote.origin.url)
 
     # Déterminer l'URL web du dépôt (pour lien de la branche)
     local web_repo_url
     if [[ $branch_url == git@* ]]; then
-        # Convertir SSH en HTTPS
         local host
         local path
         host=$(echo "$branch_url" | awk -F'@|:' '{print $2}')
@@ -1510,11 +1531,43 @@ function generate_report() {
     elif [[ $branch_url == https://* ]]; then
         web_repo_url=${branch_url%.git}
     else
-        # Si non supporté, laisser tel quel
         web_repo_url="$branch_url"
     fi
 
     local branch_link="${web_repo_url}/tree/${BRANCH_NAME}"
+    local commit_link="${web_repo_url}/commit/${commit_hash}"
+
+    # Détection d'un ticket éventuel dans le message de commit
+    local ticket_link=""
+    if [[ -n "$TICKET_BASE_URL" && "$commit_msg" =~ ([A-Z]+-[0-9]+) ]]; then
+        local ticket_id="${BASH_REMATCH[1]}"
+        ticket_link="$TICKET_BASE_URL$ticket_id"
+    fi
+
+    # Récupération des fichiers modifiés lors du dernier commit
+    local changed_files_html=""
+    while IFS=$'\t' read -r status filename; do
+        [ -n "$status" ] && [ -n "$filename" ] || continue
+        changed_files_html+="<tr><td>${status}</td><td>${filename}</td></tr>"
+    done < <(git show --pretty="" --name-status HEAD)
+
+    # Compter le nombre de fichiers modifiés
+    local changed_files_count
+    changed_files_count=$(echo "$changed_files_html" | grep -c '^<tr>')
+
+    # Récupération des 5 derniers commits
+    local recent_commits_html=""
+    while IFS='|' read -r c_hash c_author c_date c_msg; do
+        c_hash=$(echo "$c_hash" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        c_author=$(echo "$c_author" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        c_date=$(echo "$c_date" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        c_msg=$(echo "$c_msg" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        recent_commits_html+="<tr><td><a href=\"${web_repo_url}/commit/${c_hash}\">$c_hash</a></td><td>$c_author</td><td>$c_date</td><td>$c_msg</td></tr>"
+    done < <(git log -5 --date=local --pretty=format:'%h|%an|%ad|%s')
+
+    # Compter le nombre de commits affichés
+    local commits_count
+    commits_count=$(echo "$recent_commits_html" | grep -c '^<tr>')
 
     cat > "$report_file" <<EOF
 <!DOCTYPE html>
@@ -1525,72 +1578,185 @@ function generate_report() {
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 0;
             background: #f9f9f9;
-        }
-        h1 {
             color: #333;
         }
-        .info-table {
+        header {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        header .logo {
+            display: flex;
+            align-items: center;
+        }
+        header img {
+            height: 40px;
+            margin-right: 15px;
+        }
+        header h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+        .container {
+            width: 90%;
+            max-width: 1000px;
+            margin: auto;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 5px;
+            margin-top: 50px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        h2:before {
+            content: "⚙ ";
+            font-weight: normal;
+            color: #2c3e50;
+            position: absolute;
+            left: -30px;
+            top: 0;
+        }
+        p.description {
+            font-size: 15px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+        p.summary {
+            font-size: 14px;
+            margin-bottom: 30px;
+            color: #555;
+        }
+        table {
             border-collapse: collapse;
             width: 100%;
-            max-width: 600px;
             background: #fff;
             border: 1px solid #ccc;
+            margin-bottom: 30px;
         }
-        .info-table th, .info-table td {
-            padding: 8px 12px;
+        th, td {
+            padding: 10px 12px;
             border: 1px solid #ddd;
             vertical-align: top;
         }
-        .info-table th {
+        th {
             background: #f2f2f2;
             text-align: left;
             font-weight: bold;
-        }
-        .footer {
-            margin-top: 20px;
-            font-size: 0.9em;
-            color: #555;
+            width: 25%;
         }
         .commit-msg {
             white-space: pre-wrap;
         }
+        .footer {
+            margin-top: 20px;
+            font-size: 0.85em;
+            color: #555;
+            text-align: center;
+            padding-bottom: 30px;
+        }
+        a {
+            color: #2980b9;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        a:hover {
+            text-decoration: underline;
+            color: #1a6fb9;
+        }
+        .no-ticket {
+            color: #7f8c8d;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-<h1>Rapport de push Git</h1>
+<header>
+    <div class="logo">
+        <img src="https://via.placeholder.com/40x40/ffffff/000000?text=G" alt="Logo">
+        <h1>Rapport de push Git</h1>
+    </div>
+</header>
+<div class="container">
+    <p class="description">
+        Ce rapport a été généré automatiquement après un push. Il récapitule les informations clés du push effectué,
+        notamment la branche, l'auteur, le commit et le message associé. Il peut être utilisé pour un suivi plus précis
+        des modifications introduites dans le dépôt.
+    </p>
+    <p class="summary">Ce push a modifié $changed_files_count fichier(s) et affiche un aperçu des $commits_count derniers commits.</p>
 
-<p>Ce rapport a été généré automatiquement après un push. Il récapitule les informations clés du push effectué, notamment la branche, l'auteur, le commit et le message associé. Il peut être utilisé pour un suivi plus précis des modifications introduites dans le dépôt.</p>
+    <h2>Détails du dernier commit</h2>
+    <table>
+        <tr>
+            <th>Branche</th>
+            <td><a href="$branch_link">$BRANCH_NAME</a></td>
+        </tr>
+        <tr>
+            <th>Projet (Remote URL)</th>
+            <td><a href="$web_repo_url">$web_repo_url</a></td>
+        </tr>
+        <tr>
+            <th>Commit</th>
+            <td><a href="$commit_link">$commit_hash</a></td>
+        </tr>
+        <tr>
+            <th>Auteur du Commit</th>
+            <td>$commit_author ($commit_author_email)</td>
+        </tr>
+        <tr>
+            <th>Date du Commit</th>
+            <td>$commit_date</td>
+        </tr>
+        <tr>
+            <th>Committer</th>
+            <td>$committer ($committer_email)</td>
+        </tr>
+        <tr>
+            <th>Date du Committer</th>
+            <td>$committer_date</td>
+        </tr>
+        <tr>
+            <th>Message</th>
+            <td class="commit-msg">$commit_msg</td>
+        </tr>
+        <tr>
+            <th>Ticket Lié</th>
+            <td>
+                ${ticket_link:+"<a href=\"$ticket_link\">Aller au ticket</a> (Ticket détecté: $ticket_id)"}${ticket_link:-<span class="no-ticket">Aucun ticket détecté</span>}
+            </td>
+        </tr>
+    </table>
 
-<table class="info-table">
-    <tr>
-        <th>Branche</th>
-        <td><a href="$branch_link">$BRANCH_NAME</a></td>
-    </tr>
-    <tr>
-        <th>Auteur</th>
-        <td>$email</td>
-    </tr>
-    <tr>
-        <th>Commit</th>
-        <td><a href="${web_repo_url}/commit/${commit_hash}">$commit_hash</a></td>
-    </tr>
-    <tr>
-        <th>Message</th>
-        <td class="commit-msg">$commit_msg</td>
-    </tr>
-    <tr>
-        <th>Remote URL</th>
-        <td><a href="$web_repo_url">$web_repo_url</a></td>
-    </tr>
-</table>
+    <h2>Fichiers modifiés lors du dernier commit</h2>
+    <table>
+        <tr>
+            <th style="width:100px;">Statut</th>
+            <th>Fichier</th>
+        </tr>
+        $changed_files_html
+    </table>
 
-<div class="footer">
-<p><em>Généré le $(date '+%Y-%m-%d %H:%M:%S')</em></p>
-<p>Version du script : $SCRIPT_VERSION </p>
+    <h2>Aperçu des derniers commits</h2>
+    <table>
+        <tr>
+            <th style="width:100px;">Hash</th>
+            <th>Auteur</th>
+            <th>Date</th>
+            <th>Message</th>
+        </tr>
+        $recent_commits_html
+    </table>
+
+    <div class="footer">
+        <p><em>Généré le $(date '+%Y-%m-%d %H:%M:%S')</em></p>
+        <p>Version du script : $SCRIPT_VERSION</p>
+        <p>Auteur du script actuel : $email</p>
+    </div>
 </div>
-
 </body>
 </html>
 EOF
@@ -1744,17 +1910,18 @@ function handle_submodules() {
 function generate_commit_stats() {
     echo_color "$BLUE" "Génération de statistiques de commits..."
 
-    # Créer le répertoire ./stats s'il n'existe pas déjà
-    mkdir -p "./stats"
+    # Créer le répertoire stats s'il n'existe pas
+    mkdir -p stats
 
-    local stats_file="./stats/commit_stats.md"
+    # Générer le fichier dans le dossier stats
+    local stats_file="stats/commit_stats.md"
 
     # Top 3 des auteurs sur les 30 derniers commits
     echo "## Statistiques de commits" > "$stats_file"
     echo "### Top Auteurs (30 derniers commits):" >> "$stats_file"
     git shortlog -n -s -e -30 | head -n 3 >> "$stats_file"
 
-    # Compter le nombre de commits par type sur les 30 derniers commits
+    # Compter le nombre de commits par type (Tâche, Bug, etc.)
     echo "### Nombre de commits par type (30 derniers):" >> "$stats_file"
     for t in "Tâche" "Bug" "Amélioration" "Refactor"; do
         count=$(git log -30 --pretty=%s | grep "^$t:" | wc -l)
@@ -1762,6 +1929,7 @@ function generate_commit_stats() {
     done
 
     log_action "INFO" "Statistiques de commits générées dans $stats_file"
+    echo_color "$GREEN" "Statistiques de commits générées dans $stats_file"
 }
 
 
@@ -2000,21 +2168,11 @@ function default_actions_sequence() {
 
 function main_without_repo_dir() {
     echo_color "$GREEN" "Début opérations sur dépôt courant."
-    # Vérifier le dépôt git, sinon proposer de l'initialiser
-    if ! check_git_repo; then
-        echo_color "$YELLOW" "Le répertoire n'est pas un dépôt Git. Voulez-vous l'initialiser ?"
-        # Appel de la fonction ensure_git_repository (nouvelle fonction avancée)
-        # Cette fonction permettra à l'utilisateur d'initialiser un dépôt s'il le souhaite
-        if ! ensure_git_repository; then
-            echo_color "$RED" "Impossible de continuer sans dépôt Git."
-            exit 1
-        fi
-    fi
-
+    check_git_repo || exit 1
     check_user_email || exit 1
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$YELLOW" "Mode simulation activé."
+        echo_color "$YELLOW" "Simulation activée."
     fi
 
     # Appeler manage_hooks si MANAGE_HOOKS == "y"
@@ -2052,68 +2210,11 @@ function main_without_repo_dir() {
         export_patches
     fi
 
-    # Lancer la séquence d'actions par défaut
+    # On ne déclenche CI et log release qu'après le push, donc ces fonctions seront appelées post-push
+    # On fera trigger_ci et log_release après perform_push dans ce cas (à adapter selon la logique voulue)
+    # Idem pour le nettoyage des branches: après la séquence par défaut, par exemple dans collect_feedback.
+
     default_actions_sequence
-}
-
-# Ajout de la fonction ensure_git_repository
-function ensure_git_repository() {
-    # Vérifier si c'est déjà un dépôt Git
-    if [ -d ".git" ]; then
-        log_action "INFO" "Le répertoire actuel est déjà un dépôt Git."
-        return 0
-    fi
-
-    # Pas un dépôt Git, demander à l'utilisateur s'il veut en créer un
-    echo_color "$YELLOW" "Ce répertoire n'est pas un dépôt Git. Voulez-vous l'initialiser ? (y/n)"
-    read -r INIT_REPO_ANSWER
-    if [ "$INIT_REPO_ANSWER" == "y" ]; then
-        if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : git init"
-            log_action "INFO" "Simulation: initialisation du dépôt Git."
-        else
-            git init || {
-                echo_color "$RED" "Échec de l'initialisation du dépôt."
-                log_action "ERROR" "Échec git init."
-                return 1
-            }
-            log_action "INFO" "Dépôt Git initialisé avec succès."
-            echo_color "$GREEN" "Dépôt Git initialisé."
-
-            # Proposer d'ajouter un dépôt distant
-            echo_color "$YELLOW" "Souhaitez-vous ajouter un dépôt distant maintenant ? (y/n)"
-            read -r ADD_REMOTE_ANSWER
-            if [ "$ADD_REMOTE_ANSWER" == "y" ]; then
-                echo_color "$YELLOW" "Entrez l'URL du dépôt distant (ex: git@github.com:user/project.git ou https://...):"
-                read -r REMOTE_URL
-                if [ -n "$REMOTE_URL" ]; then
-                    if [ "$DRY_RUN" == "y" ]; then
-                        echo_color "$GREEN" "Simulation : git remote add origin '$REMOTE_URL'"
-                        log_action "INFO" "Simulation: ajout du remote origin."
-                    else
-                        git remote add origin "$REMOTE_URL" || {
-                            echo_color "$RED" "Échec de l'ajout du dépôt distant."
-                            log_action "ERROR" "Échec git remote add."
-                            return 1
-                        }
-                        log_action "INFO" "Dépôt distant ajouté : $REMOTE_URL"
-                        echo_color "$GREEN" "Dépôt distant 'origin' ajouté avec succès."
-                    fi
-                else
-                    echo_color "$RED" "Aucune URL fournie, pas d'ajout de dépôt distant."
-                    log_action "WARN" "Aucune URL de remote fournie."
-                fi
-            else
-                log_action "INFO" "L'utilisateur a choisi de ne pas ajouter de dépôt distant maintenant."
-            fi
-        fi
-    else
-        echo_color "$RED" "Ce répertoire n'étant pas un dépôt Git et l'initialisation étant refusée, le script ne peut pas continuer."
-        log_action "ERROR" "Pas un dépôt Git, initialisation refusée."
-        return 1
-    fi
-
-    return 0
 }
 
 function main_menu() {

@@ -35,10 +35,10 @@ Si ces outils ne sont pas disponibles, le script tentera une dégradation douce 
 
 1. **Cloner le script** :
 
-   ```bash
-   git clone https://github.com/teamflp/git_push_automation.git
-   cd git_push_automation
-   ```
+```bash
+git clone https://github.com/teamflp/git_push_automation.git
+cd git_push_automation
+```
 
 **Rendre le script exécutable** :
 
