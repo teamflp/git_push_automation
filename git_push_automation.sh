@@ -1346,10 +1346,16 @@ function send_notification() {
             echo "POST $github_api_url"
             echo "Data: $github_message"
         else
-            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" --request POST \
+            # On échappe correctement le message via jq (lecture en mode 'raw' puis conversion JSON)
+            local encoded_github_message
+            encoded_github_message=$(echo "$github_message" | jq -Rs '.')
+
+            # On l'utilise ensuite dans le champ "body"
+            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+                --request POST \
                 --header "Authorization: token $GITHUB_TOKEN" \
                 --header "Content-Type: application/json" \
-                --data "{\"body\": \"$github_message\"}" \
+                --data "{\"body\": $encoded_github_message}" \
                 "$github_api_url")
 
             http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
@@ -1367,6 +1373,7 @@ function send_notification() {
     else
         log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
     fi
+
 
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
