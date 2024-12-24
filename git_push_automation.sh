@@ -1038,13 +1038,14 @@ function create_gitlab_release() {
 function notify_github() {
     local message="$1"
     local commit_hash="$2"
-    # API GitHub: créer un commentaire de commit
-    # https://docs.github.com/en/rest/commits/comments#create-a-commit-comment
+    local encoded_message
+    encoded_message=$(echo "$message" | jq -Rs '.')  # Encodage JSON
+
     response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
         -X POST \
         -H "Authorization: token $GITHUB_TOKEN" \
         -H "Content-Type: application/json" \
-        --data "{\"body\":\"$message\"}" \
+        --data "{\"body\": $encoded_message}" \
         "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
 
     http_status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
@@ -1059,6 +1060,7 @@ function notify_github() {
         log_action "ERROR" "GitHub notif fail $http_status $body"
     fi
 }
+
 
 function create_github_release() {
     local tag_name="$1"
