@@ -81,7 +81,7 @@ Ainsi, même si vous avez installé le script globalement, le script chargera la
 
 ---
 
-## 5. Vérification de fonctionnement
+## 4. Vérification de fonctionnement
 
 Pour vérifier le bon fonctionnement, vous pouvez exécuter :
 
@@ -93,7 +93,7 @@ git_push_automation.sh -h
 
 Vous verrez alors l’aide avec la liste des options disponibles.
 
-## **4. Configuration** : `.env.git_push_automation`
+## 5. Configuration : `.env.git_push_automation`
 
 - Par défaut, le script cherche un fichier `.env.git_push_automatio` à la racine.
 
@@ -203,9 +203,9 @@ PLATFORM="gitlab"
 
 En l'absence de certaines variables, les fonctionnalités associées seront ignorées ou dégradées.
 
-## 5. Utilisation
+## 6. Utilisation
 
-### 5.1. Exécution simple (flux interactif)
+### 6.1. Exécution simple (flux interactif)
 
 Sans aucune option, le script propose un flux par défaut :
 
@@ -222,7 +222,7 @@ Celui-ci :
 5. Pousse vers la branche distante.
 6. Envoie les notifications, génère un rapport HTML (si activé), déclenche la CI (si configurée), etc.
 
-### 5.2. Lancement avec options
+### 6.2. Lancement avec options
 
 Le script supporte de nombreuses options (les passer en ligne de commande). Pour les voir :
 
@@ -265,9 +265,9 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 | `-U` | Aucun | Déclencher un pipeline CI après le push (CI_TRIGGER_URL requis) | `./git_push_automation.sh -U` |
 | `-L` | Aucun | Lire la release (après création de tag) dans release_history.log | `./git_push_automation.sh -L` |
 
-## 6. Scénarios d'utilisation
+## 7. Scénarios d'utilisation
 
-### **6.1 Exécution simple avec tests et rapport HTML :**
+### **7.1 Exécution simple avec tests et rapport HTML :**
 
 ```bash
 ./git_push_automation.sh -t -H
@@ -276,7 +276,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 - Lance les tests (`TEST_COMMAND`) avant le commit/push.
 - Génère ensuite un rapport HTML dans `./reports/report_YYYYMMDD_HHMMSS.html`.
 
-### **6.2. Exécuter en mode simulation (dry-run) et gérer des sous-modules, hooks, qualité :**
+### **7.2. Exécuter en mode simulation (dry-run) et gérer des sous-modules, hooks, qualité :**
 
 ```bash
 ./git_push_automation.sh -d -k -S -q
@@ -287,13 +287,13 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 - Met à jour/synchronise les sous-modules (`-S`).
 - Lance un check de qualité (`-q` = ex. lint, audit, bandit…).
 
-### 6.3. Créer un tag, lancer tests + qualité, exporter 5 derniers commits en patch
+### 7.3. Créer un tag, lancer tests + qualité, exporter 5 derniers commits en patch
 
 ```bash
 ./git_push_automation.sh -t -q -T v2.0.0 -H -P 5
 ```
 
-### **6.4.** Comparer la branche courante avec `main`, nettoyer les branches fusionnées, déclencher CI
+### **7.4.** Comparer la branche courante avec `main`, nettoyer les branches fusionnées, déclencher CI
 
 ```bash
 ./git_push_automation.sh -B main -x -U
@@ -303,7 +303,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 - Nettoie les branches locales fusionnées (`-x`).
 - Après push, déclenche le pipeline CI (`-U`).
 
-### **6.5.** Lier un ticket, générer des stats, exécuter tests & qualité sur une branche spécifique
+### **7.5.** Lier un ticket, générer des stats, exécuter tests & qualité sur une branche spécifique
 
 ```bash
 ./git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
@@ -317,7 +317,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 
 ---
 
-## 7. Fonctionnalités principales et avancées
+## 8. Fonctionnalités principales et avancées
 
  1. **Sauvegarde automatique** : avant d’ajouter des fichiers, le script peut sauvegarder dans `./backup/backup_YYYYMMDD_HHMMSS/`.
  2. **Ajout de fichiers** : possibilité de spécifier une liste de fichiers, ou `.` pour tous.
@@ -340,7 +340,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 
 ---
 
-## 8. Fichier de logs
+## 9. Fichier de logs
 
 Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y sont consignées les actions et erreurs.
 
@@ -356,7 +356,7 @@ Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y
 
 ---
 
-## 9. Mode multi-dépôts
+## 10. Mode multi-dépôts
 
 Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les sous-répertoires qui contiennent un `.git` et exécute la séquence.
 
@@ -364,7 +364,7 @@ Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les s
 
 ---
 
-## 10. Questions fréquentes (FAQ)
+## 11. Questions fréquentes (FAQ)
 
 1. **Que se passe-t-il si un outil manque (ex: npm, mail, etc.) ?**\
    Le script affiche un message d’avertissement ou propose d’installer l’outil (apt-get, yum, brew…).\
@@ -387,7 +387,7 @@ Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les s
 
 ---
 
-## 11. Conseils et bonnes pratiques
+## 12. Conseils et bonnes pratiques
 
 - **Sécurisez vos tokens** (GitLab, GitHub, Bitbucket). Ils ne doivent pas être commités en clair dans le dépôt.
 - **Activez la vérification git-secrets** si vous manipulez régulièrement des identifiants ou secrets dans le code.
@@ -396,7 +396,7 @@ Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les s
 
 ---
 
-## 12. Conclusion
+## 13. Conclusion
 
 Le **Git Push Automation – Version Avancée** permet de :
 
