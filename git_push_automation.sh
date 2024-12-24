@@ -1034,33 +1034,40 @@ function create_gitlab_release() {
     fi
 }
 
-# GITHUB
+#### NOTIFICATION GITHUB ####
 function notify_github() {
     local message="$1"
     local commit_hash="$2"
+    local github_api_url="https://api.github.com"
+    
+    # Encodage du message pour éviter les problèmes de caractères spéciaux
     local encoded_message
-    encoded_message=$(echo "$message" | jq -Rs '.')  # Encodage JSON
+    encoded_message=$(echo "$message" | jq -Rs '.')  # -R (raw), -s (slurp)
 
+    # Appel à l’API GitHub pour ajouter un commentaire sur le commit
+    # (on suppose que GITHUB_TOKEN et GITHUB_REPO sont déjà définis)
     response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-        -X POST \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        -H "Content-Type: application/json" \
+        --request POST \
+        --header "Authorization: token $GITHUB_TOKEN" \
+        --header "Accept: application/vnd.github+json" \
+        --header "Content-Type: application/json" \
         --data "{\"body\": $encoded_message}" \
-        "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
+        "$github_api_url/repos/$GITHUB_REPO/commits/$commit_hash/comments")
 
-    http_status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
-    body=$(echo "$response" | sed 's/HTTPSTATUS\:.*//g')
+    # Récupération du code HTTP et du corps de la réponse
+    http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
-    if [ "$http_status" -eq 201 ]; then
-        echo_color "$GREEN" "Notif GitHub OK."
-        log_action "INFO" "Notif GitHub OK"
-    else
-        echo_color "$RED" "Erreur notif GitHub:$http_status"
+    # Vérification du statut
+    if [ "$http_status" -ne 201 ]; then
+        echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
         echo_color "$RED" "Réponse: $body"
         log_action "ERROR" "GitHub notif fail $http_status $body"
+    else
+        echo_color "$GREEN" "Notif GitHub OK."
+        log_action "INFO" "Notif GitHub OK"
     fi
 }
-
 
 function create_github_release() {
     local tag_name="$1"
