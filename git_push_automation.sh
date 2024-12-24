@@ -1387,7 +1387,6 @@ function send_notification() {
     fi
 
 
-
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
         local gitlab_message="$common_message"
