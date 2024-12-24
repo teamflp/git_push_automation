@@ -1482,22 +1482,61 @@ Commit: \`$commit_hash\`.
 }
 
 function send_custom_webhook() {
-    if [ -z "$SLACK_WEBHOOK_URL" ]; then
-        log_action "WARN" "SLACK_WEBHOOK_URL non défini."
-        return
+    local email="$(git config --get user.email)"
+
+    #### 1) Webhook Slack ####
+    if [ -n "$SLACK_WEBHOOK_URL" ]; then
+        local slack_payload="{\"message\": \"Nouveau push sur $BRANCH_NAME par $email.\"}"
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : custom Slack webhook"
+            echo "$slack_payload"
+        else
+            curl -s -X POST -H "Content-type: application/json" \
+                 --data "$slack_payload" "$SLACK_WEBHOOK_URL" || {
+                log_action "ERROR" "Erreur lors de l'envoi du webhook personnalisé Slack."
+            }
+        fi
+        log_action "INFO" "Webhook Slack personnalisé envoyé."
+    else
+        log_action "WARN" "SLACK_WEBHOOK_URL non défini, pas de notif Slack."
     fi
 
-    local email=$(git config --get user.email)
-    local payload="{\"message\": \"Nouveau push sur $BRANCH_NAME par $email.\"}"
-    if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : custom webhook"
-    else
-        curl -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL" || {
-            log_action "ERROR" "Erreur lors de l'envoi du webhook personnalisé."
-        }
+    #### 2) Webhook GitHub (commentaire sur commit) ####
+    if [ "$PLATFORM" == "github" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
+        # On récupère le hash du dernier commit local (HEAD)
+        local commit_hash
+        commit_hash=$(git rev-parse HEAD)
+
+        # Corps du commentaire GitHub
+        local github_payload="{\"body\": \"Nouveau push sur la branche $BRANCH_NAME par $email.\"}"
+
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : custom GitHub webhook (commentaire sur commit)"
+            echo "$github_payload"
+        else
+            # Envoi d'un commentaire sur le commit via l'API GitHub
+            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+                -X POST \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data "$github_payload" \
+                "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
+
+            http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+            body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+
+            if [ "$http_status" -ne 201 ]; then
+                echo_color "$RED" "Erreur custom webhook GitHub HTTP:$http_status"
+                echo_color "$RED" "Réponse: $body"
+                log_action "ERROR" "GitHub custom webhook fail $http_status $body"
+            else
+                echo_color "$GREEN" "Webhook GitHub OK."
+                log_action "INFO" "Webhook GitHub OK."
+            fi
+        fi
     fi
-    log_action "INFO" "Webhook personnalisé envoyé."
 }
+
 
 function generate_report() {
     # AJOUT: Générer un rapport HTML local plus professionnel
