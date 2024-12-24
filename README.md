@@ -401,10 +401,6 @@ Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y
   ...
   ```
 
-  Copier le code
-
-  `2024-01-01 10:15:42 [INFO] : Fichier de log créé : ./git_push_automation.log 2024-01-01 10:15:42 [INFO] : Démarrage du script v3.1.0 2024-01-01 10:15:43 [INFO] : Fichiers à ajouter : . 2024-01-01 10:15:45 [ERROR] : Fichier 'inexistant.txt' inexistant. ...`
-
 ---
 
 ## 9. Mode multi-dépôts
