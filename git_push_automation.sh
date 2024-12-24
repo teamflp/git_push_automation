@@ -1346,21 +1346,11 @@ function send_notification() {
             echo "POST $github_api_url"
             echo "Data: $github_message"
         else
-            # 1) Vérif Debug : 
-            echo_color "$BLUE" "DEBUG - GITHUB_REPO=$GITHUB_REPO, commit_hash=$commit_hash"
-            echo_color "$BLUE" "DEBUG - github_message brut =>"
-            echo "$github_message" | sed -n 'l'  # Montre les caractères cachés
-
-            # 2) Encodage du message via jq
+            # On échappe correctement le message via jq (lecture en mode 'raw' puis conversion JSON)
             local encoded_github_message
             encoded_github_message=$(echo "$github_message" | jq -Rs '.')
 
-            # 3) Double-check debug 
-            echo_color "$BLUE" "DEBUG - encoded_github_message => $encoded_github_message"
-            echo_color "$BLUE" "DEBUG - Requête finale => {\"body\": $encoded_github_message}"
-            echo_color "$BLUE" "DEBUG - URL => $github_api_url"
-
-            # 4) Execution de la requête 
+            # On l'utilise ensuite dans le champ "body"
             response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
                 --request POST \
                 --header "Authorization: token $GITHUB_TOKEN" \
@@ -1368,11 +1358,9 @@ function send_notification() {
                 --data "{\"body\": $encoded_github_message}" \
                 "$github_api_url")
 
-            # 5) Récup status 
             http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
             body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
-            # 6) Analyse du résultat 
             if [ "$http_status" -ne 201 ]; then
                 echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
                 echo_color "$RED" "Réponse : $body"
