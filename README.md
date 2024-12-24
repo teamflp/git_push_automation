@@ -77,47 +77,6 @@ git_push_automation -h
 
 ---
 
-## 3. Méthode B (Installation locale au projet)
-
-Télécharger le script dans la racine de **votre projet** :
-
-```bash
-curl -L \
-  https://raw.githubusercontent.com/teamflp/git_push_automation/master/git_push_automation.sh \
-  -o git_push_automation.sh
-```
-
-### Rendre le script exécutable
-
-```bash
-chmod +x git_push_automation.sh
-```
-
-### Lancer le script depuis la racine de votre projet
-
-```bash
-./git_push_automation.sh -h
-```
-
-> **Remarque** : Cette méthode vous oblige à lancer le script depuis la racine (ou en donnant le chemin complet). Le fichier `.env.git_push_automatio` se trouvera également ici pour être détecté automatiquement.
-
----
-
-## 4. Méthode C (Cloner le dépôt)
-
-Vous pouvez également cloner directement le dépôt Git :
-
-```bash
-git clone https://github.com/teamflp/git_push_automation.git
-cd git_push_automation
-
-# Rendre le script exécutable
-chmod +x git_push_automation.sh
-
-# Lancer le script
-./git_push_automation.sh -h
-```
-
 Ainsi, même si vous avez installé le script globalement, le script chargera la configuration **dans le dossier courant** où vous exécutez la commande.
 
 ---
@@ -130,13 +89,7 @@ Pour vérifier le bon fonctionnement, vous pouvez exécuter :
 git_push_automation.sh -h
 ```
 
-(s’il est installé globalement) **ou** :
-
-```bash
-./git_push_automation.sh -h
-```
-
-(s’il est dans la racine de votre projet).
+(s’il est installé correctement) :
 
 Vous verrez alors l’aide avec la liste des options disponibles.
 
