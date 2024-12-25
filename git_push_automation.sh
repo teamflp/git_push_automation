@@ -1417,7 +1417,6 @@ function send_notification() {
         log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
     fi
 
-
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
         local gitlab_message="$common_message"
