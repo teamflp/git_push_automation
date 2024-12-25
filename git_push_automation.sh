@@ -877,7 +877,7 @@ function perform_push() {
 
     # Envoi des notifications
     send_notification
-    send_custom_webhook
+    # send_custom_webhook
 
     # Génération du rapport si demandé
     if [ "$GENERATE_REPORT" == "y" ]; then
