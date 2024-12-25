@@ -1348,16 +1348,24 @@ function send_notification() {
 
     #### Notification GitHub ####
     if [ -n "$GITHUB_TOKEN" ]; then
+
+        # Récupération du message commun
         local github_message="$common_message"
+
+        # Récupération du dernier commit
+        local commit_hash
+        commit_hash=$(git rev-parse HEAD)  # ou utilisez la variable existante si vous le souhaitez
+
+        # Construction de l'URL d'API GitHub
         local github_api_url="https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments"
 
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : Notification GitHub."
+            echo_color "$GREEN" "[DRY_RUN] Simulation : Notification GitHub."
             echo "POST $github_api_url"
-            echo "Data: $github_message"
+            echo "Data (message) : $github_message"
         else
             # === DEBUG LOGS ===
-            echo_color "$BLUE" "=== DEBUG NOTIF GITHUB ==="
+            echo_color "$BLUE" "=== DEBUG NOTIF GITHUB (send_notification) ==="
             echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
             echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
             echo_color "$BLUE" "Commit Hash => $commit_hash"
@@ -1391,9 +1399,11 @@ function send_notification() {
                 --data "{\"body\": $encoded_github_message}" \
                 "$github_api_url")
 
+            # On récupère le code HTTP et le body
             http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
             body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
+            # Analyse du statut
             if [ "$http_status" -ne 201 ]; then
                 echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
                 echo_color "$RED" "Réponse : $body"
@@ -1406,6 +1416,7 @@ function send_notification() {
     else
         log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
     fi
+
 
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
