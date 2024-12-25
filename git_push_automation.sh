@@ -13,7 +13,7 @@
 # - Rapport HTML enrichi incluant tests, qualité, stats.
 # - Messages d'aide et gestion fine des erreurs.
 #
-# Configuration via un fichier .env_git_push_automation (exemple fourni).
+# Configuration via un fichier .env.git_push_automation (exemple fourni).
 #
 # Les développeurs peuvent utiliser ce script en ligne de commande avec différentes
 # options, ou en mode par défaut interactif.
