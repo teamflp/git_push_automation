@@ -1040,10 +1040,30 @@ function notify_github() {
     local message="$1"
     local commit_hash="$2"
     local github_api_url="https://api.github.com"
+
+    echo_color "$BLUE" "=== DEBUG GITHUB NOTIF ==="
+    echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
+    echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
+    echo_color "$BLUE" "Commit Hash => $commit_hash"
     
+    echo_color "$BLUE" "Message brut (caractères spéciaux visibles) =>"
+    # Affiche les caractères cachés (\r, \n, etc.)
+    echo "$message" | sed -n 'l'
+
+    # Vérifie si jq est installé
+    if ! command -v jq &>/dev/null; then
+        echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
+        log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
+        return
+    fi
+
     # Encodage du message pour éviter les problèmes de caractères spéciaux
     local encoded_message
-    encoded_message=$(echo "$message" | jq -Rs '.')  # -R (raw), -s (slurp)
+    encoded_message=$(echo "$message" | jq -Rs '.')
+
+    echo_color "$BLUE" "encoded_message => $encoded_message"
+    echo_color "$BLUE" "JSON final => {\"body\": $encoded_message}"
+    echo_color "$BLUE" "=================================="
 
     # Appel à l’API GitHub pour ajouter un commentaire sur le commit
     # (on suppose que GITHUB_TOKEN et GITHUB_REPO sont déjà définis)
@@ -1069,6 +1089,7 @@ function notify_github() {
         log_action "INFO" "Notif GitHub OK"
     fi
 }
+
 
 function create_github_release() {
     local tag_name="$1"
