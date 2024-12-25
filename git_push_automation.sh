@@ -876,7 +876,7 @@ function perform_push() {
     fi
 
     # Envoi des notifications
-    send_notification
+    # send_notification
     # send_custom_webhook
 
     # Génération du rapport si demandé
