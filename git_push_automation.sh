@@ -1540,8 +1540,37 @@ function send_custom_webhook() {
         local commit_hash
         commit_hash=$(git rev-parse HEAD)
 
-        # Corps du commentaire GitHub
-        local github_payload="{\"body\": \"Nouveau push sur la branche $BRANCH_NAME par $email.\"}"
+        # Message brut à commenter
+        local raw_message="Nouveau push sur la branche $BRANCH_NAME par $email."
+
+        # === DEBUG LOGS ===
+        echo_color "$BLUE" "=== DEBUG custom GitHub webhook ==="
+        echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
+        echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
+        echo_color "$BLUE" "Commit Hash => $commit_hash"
+        echo_color "$BLUE" "Message brut =>"
+        # Affiche les caractères spéciaux (\n, \r, etc.) s'il y en a
+        echo "$raw_message" | sed -n 'l'
+
+        # Vérifier si jq est installé
+        if ! command -v jq &>/dev/null; then
+            echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
+            log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
+            return
+        fi
+        # ===================
+
+        # On échappe correctement le message via jq
+        local encoded_message
+        encoded_message=$(echo "$raw_message" | jq -Rs '.')
+
+        # On construit la payload JSON finale
+        local github_payload
+        github_payload="{\"body\": $encoded_message}"
+
+        echo_color "$BLUE" "encoded_message => $encoded_message"
+        echo_color "$BLUE" "Payload final => $github_payload"
+        echo_color "$BLUE" "==================================="
 
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : custom GitHub webhook (commentaire sur commit)"
