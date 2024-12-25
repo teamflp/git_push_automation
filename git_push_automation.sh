@@ -756,6 +756,7 @@ function perform_merge() {
     fi
 }
 
+# Rebase sert à la synchronisation de la branche courante avec une autre branche
 function perform_rebase() {
     # AJOUT: Rebase sur une branche donnée avant le push
     if [ -n "$REBASE_BRANCH" ]; then
