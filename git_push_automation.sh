@@ -696,6 +696,7 @@ function unstash_changes() {
     fi
 }
 
+# PULL : Mettre à jour la branche locale avec les modifications de la branche distante
 function perform_pull() {
     if [ "$DO_PULL" == "y" ]; then
         echo_color "$YELLOW" "Exécuter git pull..."
@@ -725,6 +726,7 @@ function perform_pull() {
     fi
 }
 
+# MERGE : Fusionner une branche dans la branche courante avant le push
 function perform_merge() {
     if [ "$DO_MERGE" == "y" ]; then
         echo_color "$YELLOW" "Merge de '$MERGE_BRANCH'..."
@@ -756,7 +758,10 @@ function perform_merge() {
     fi
 }
 
-# Rebase sert à la synchronisation de la branche courante avec une autre branche
+# REBASE : Rebase sur une branche avant le push. Utile pour garder l'historique propre. (ex: rebase sur master avant de pousser une feature)
+# ATTENTION : Ne jamais rebase une branche partagée (ex: master)
+# Utilisation : git_push_automation.sh -R master
+# Le rebase sert à appliquer les commits de la branche cible (ex: master) sur la branche courante (ex: feature)
 function perform_rebase() {
     # AJOUT: Rebase sur une branche donnée avant le push
     if [ -n "$REBASE_BRANCH" ]; then
@@ -774,6 +779,7 @@ function perform_rebase() {
     fi
 }
 
+# PUSH : Pousser les modifications locales sur la branche distante
 function perform_push() {
     while true; do
         echo ""
@@ -876,8 +882,8 @@ function perform_push() {
     fi
 
     # Envoi des notifications
-    # send_notification
-    # send_custom_webhook
+    send_notification
+    send_custom_webhook
 
     # Génération du rapport si demandé
     if [ "$GENERATE_REPORT" == "y" ]; then
@@ -1035,8 +1041,8 @@ function create_gitlab_release() {
     fi
 }
 
-# NOTIFICATION GITHUB 
-function notify_github() {
+# NOTIFICATION GITHUB : FONCTIONNALITÉS POUR UNE PROCHAINE VERSION
+# function notify_github() {
     local message="$1"
     local commit_hash="$2"
     local github_api_url="https://api.github.com"
@@ -1347,75 +1353,77 @@ function send_notification() {
     fi
 
     #### Notification GitHub ####
-    if [ -n "$GITHUB_TOKEN" ]; then
-
-        # Récupération du message commun
-        local github_message="$common_message"
-
-        # Récupération du dernier commit
-        local commit_hash
-        commit_hash=$(git rev-parse HEAD)  # ou utilisez la variable existante si vous le souhaitez
-
-        # Construction de l'URL d'API GitHub
-        local github_api_url="https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments"
-
-        if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "[DRY_RUN] Simulation : Notification GitHub."
-            echo "POST $github_api_url"
-            echo "Data (message) : $github_message"
-        else
-            # === DEBUG LOGS ===
-            echo_color "$BLUE" "=== DEBUG NOTIF GITHUB (send_notification) ==="
-            echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
-            echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
-            echo_color "$BLUE" "Commit Hash => $commit_hash"
-
-            echo_color "$BLUE" "Message brut (caractères spéciaux visibles) =>"
-            # Affiche les caractères cachés (\n, \r, etc.)
-            echo "$github_message" | sed -n 'l'
-
-            # Vérifier si jq est installé
-            if ! command -v jq &>/dev/null; then
-                echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
-                log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
-                return
-            fi
-            # ===================
-
-            # On échappe correctement le message via jq (lecture en mode 'raw' puis conversion JSON)
-            local encoded_github_message
-            encoded_github_message=$(echo "$github_message" | jq -Rs '.')
-
-            # Log du JSON final
-            echo_color "$BLUE" "encoded_github_message => $encoded_github_message"
-            echo_color "$BLUE" "JSON final => {\"body\": $encoded_github_message}"
-            echo_color "$BLUE" "========================================"
-
-            # On l'utilise ensuite dans le champ "body"
-            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-                --request POST \
-                --header "Authorization: token $GITHUB_TOKEN" \
-                --header "Content-Type: application/json" \
-                --data "{\"body\": $encoded_github_message}" \
-                "$github_api_url")
-
-            # On récupère le code HTTP et le body
-            http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-            body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
-
-            # Analyse du statut
-            if [ "$http_status" -ne 201 ]; then
-                echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
-                echo_color "$RED" "Réponse : $body"
-                log_action "ERROR" "GitHub notif fail $http_status $body"
-            else
-                echo_color "$GREEN" "Notification GitHub OK."
-                log_action "INFO" "Notif GitHub OK."
-            fi
-        fi
-    else
-        log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
-    fi
+    # if [ -n "$GITHUB_TOKEN" ]; then
+    #
+    # Récupération du message commun
+    #    local github_message="$common_message"
+    #
+    # Récupération du dernier commit
+    #    local commit_hash
+    #    commit_hash=$(git rev-parse HEAD)  # ou utilisez la variable existante si vous le souhaitez
+    #
+    #    # Construction de l'URL d'API GitHub
+    #    local github_api_url="https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments"
+    #
+    #    # Envoi du commentaire au dépôt GitHub
+    #   
+    #    if [ "$DRY_RUN" == "y" ]; then
+    #        echo_color "$GREEN" "[DRY_RUN] Simulation : Notification GitHub."
+    #        echo "POST $github_api_url"
+    #        echo "Data (message) : $github_message"
+    #    else
+    #        # === DEBUG LOGS ===
+    #        echo_color "$BLUE" "=== DEBUG NOTIF GITHUB (send_notification) ==="
+    #        echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
+    #        echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
+    #       echo_color "$BLUE" "Commit Hash => $commit_hash"
+    #
+    #        echo_color "$BLUE" "Message brut (caractères spéciaux visibles) =>"
+    #        # Affiche les caractères cachés (\n, \r, etc.)
+    #        echo "$github_message" | sed -n 'l'
+    #
+    #        # Vérifier si jq est installé
+    #        if ! command -v jq &>/dev/null; then
+    #            echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
+    #            log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
+    #            return
+    #        fi
+    #        # ===================
+    #
+    # On échappe correctement le message via jq (lecture en mode 'raw' puis conversion JSON)
+    #        local encoded_github_message
+    #        encoded_github_message=$(echo "$github_message" | jq -Rs '.')
+    #
+    #        # Log du JSON final
+    #        echo_color "$BLUE" "encoded_github_message => $encoded_github_message"
+    #        echo_color "$BLUE" "JSON final => {\"body\": $encoded_github_message}"
+    #       echo_color "$BLUE" "========================================"
+    #
+    # On l'utilise ensuite dans le champ "body"
+    #        response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+    #            --request POST \
+    #            --header "Authorization: token $GITHUB_TOKEN" \
+    #            --header "Content-Type: application/json" \
+    #            --data "{\"body\": $encoded_github_message}" \
+    #            "$github_api_url")
+    #
+    # On récupère le code HTTP et le body
+    #        http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    #        body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+    #
+    #        # Analyse du statut
+    #        if [ "$http_status" -ne 201 ]; then
+    #            echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
+    #            echo_color "$RED" "Réponse : $body"
+    #            log_action "ERROR" "GitHub notif fail $http_status $body"
+    #        else
+    #            echo_color "$GREEN" "Notification GitHub OK."
+    #            log_action "INFO" "Notif GitHub OK."
+    #        fi
+    #    fi
+    # else
+    #    log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
+    # fi
 
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
@@ -1574,31 +1582,30 @@ function send_custom_webhook() {
 
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : custom GitHub webhook (commentaire sur commit)"
-            echo "$github_payload"
+             echo "$github_payload"
         else
             # Envoi d'un commentaire sur le commit via l'API GitHub
-            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-                -X POST \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                --data "$github_payload" \
-                "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
+             response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+                 -X POST \
+                 -H "Authorization: token $GITHUB_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 --data "$github_payload" \
+                 "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
 
-            http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-            body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
-
+             http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+             body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+     
             if [ "$http_status" -ne 201 ]; then
-                echo_color "$RED" "Erreur custom webhook GitHub HTTP:$http_status"
-                echo_color "$RED" "Réponse: $body"
-                log_action "ERROR" "GitHub custom webhook fail $http_status $body"
+                 echo_color "$RED" "Erreur custom webhook GitHub HTTP:$http_status"
+                 echo_color "$RED" "Réponse: $body"
+                 log_action "ERROR" "GitHub custom webhook fail $http_status $body"
             else
-                echo_color "$GREEN" "Webhook GitHub OK."
-                log_action "INFO" "Webhook GitHub OK."
+                 echo_color "$GREEN" "Webhook GitHub OK."
+                 log_action "INFO" "Webhook GitHub OK."
             fi
         fi
     fi
 }
-
 
 function generate_report() {
     # AJOUT: Générer un rapport HTML local plus professionnel
