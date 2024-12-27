@@ -45,11 +45,7 @@ Si certains outils ne sont pas installés, le script s’adapte (il saute certai
 
 ## 3. Installation
 
-### 3.1. Se positionner à la racine de votre projet
-
-```bash
-cd /chemin/vers/votre/projet
-```
+### 3.1. Ouvrez votre terminal
 
 ### 3.2. Méthode A (Installation globale recommandée)
 
@@ -101,104 +97,125 @@ Vous verrez alors l’aide avec la liste des options disponibles.
 
 - Dans ce fichier, vous pouvez définir des variables comme `SLACK_WEBHOOK_URL`, `GITLAB_PROJECT_ID`, `GITLAB_TOKEN`, `EMAIL_RECIPIENTS`, `TEST_COMMAND`, `QUALITY_COMMAND`, etc.
 
-Rénommez le le fichier `.env_git_push_automation.exemple` en `.env_git_push_automation` . Le script charge automatiquement les variables d’environnement depuis le fichier `.env_git_push_automation.` Par exemple :
+Rénommez le le fichier `.env_git_push_automation.exemple` en `.env_git_push_automation` . Le script charge automatiquement les variables d’environnement depuis le fichier `.env_git_push_automation.` Décommentez les options que vous utiliserez. Par exemple :
 
 ```plaintext
 ########################################################################################
-#                               .env.git_push_automation                               #
+#               CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT                   #
 ########################################################################################
+
+###> PARAMETRAGE SLACK ###
 # URL du webhook Slack (nouveau format Slack App recommandé)
-# Remplacez ci-dessous par l'URL de votre webhook Slack
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXXXXXX/XXXXXXX/XXXXXXXXXXXXXXXXXX"
+# SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T0XXXXXXXXX/xxxxxxxxxxxxxxxxxxxxxxxx"
+#
+# Canal Slack où envoyer les notifications
+# SLACK_CHANNEL="#my-channel"
+#
+# Nom d'utilisateur affiché par le bot
+# SLACK_USERNAME=MY_USERNAME
+#
+# Emoji du bot
+# SLACK_ICON_EMOJI=":ghost:"
+###< PARAMETRAGE SLACK ###
 
-# Canal Slack où envoyer les notifications (ex: #develop)
-SLACK_CHANNEL="#mon-canal"
+###> PARAMETRAGE GITLAB ###
+# ID du projet sur GitLab
+# GITLAB_PROJECT_ID=12345678
+#
+# Jeton d'accès personnel GitLab avec scope 'api'
+# GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#
+# Nom du groupe GitLab (optionnel si nécessaire)
+# GITLAB_GROUP_NAME=mygroup
+###< PARAMETRAGE GITLAB ###
 
-# Nom d'utilisateur affiché par le bot Slack
-SLACK_USERNAME="webhookbot"
+###> PARAMETRAGE EMAIL ###
+#
+# Variables d'environnement pour l'envoi d'e-mails via différentes
+# solutions : SendGrid, Mailgun, Mailjet, AWS SES, ou Gmail SMTP
+#
 
-# Emoji du bot (ex :ghost: ou :robot_face:)
-SLACK_ICON_EMOJI=":ghost:"
+# Choix du provider (sendgrid | mailgun | mailjet | aws_ses | gmail)
+# Exemple : EMAIL_PROVIDER="sendgrid"
+# EMAIL_PROVIDER="sendgrid"
 
-########################################################################################
-#                               PARAMETRAGE GITLAB                                     #
-########################################################################################
-# ID du projet sur GitLab (visible dans l'URL du projet ou dans les réglages)
-GITLAB_PROJECT_ID="12345678"
+# SENDGRID : Clé API SendGrid + e-mail expéditeur
+# SENDGRID_API_KEY="SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# SENDGRID_FROM="smtp.sendgrid.net"
 
-# Jeton d'accès personnel GitLab avec le scope 'api'
-# Générer sur GitLab dans votre profil -> Settings -> Access Tokens
-GITLAB_TOKEN="glpat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+# MAILGUN : Clé API Mailgun, Domaine et From
+# MAILGUN_API_KEY="key-xxxxxxxxxxxxxxxxxxxxxxxx"
+# MAILGUN_DOMAIN="votre-domaine.com"
+# MAILGUN_FROM="no-reply@votre-domaine.com"
 
-# Nom du groupe GitLab (optionnel)
-GITLAB_GROUP_NAME="mon-groupe"
+# MAILJET : API Key Mailjet, Secret Key et From
+# MAILJET_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"
+# MAILJET_SECRET_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"
+# MAILJET_FROM="no-reply@votre-domaine.com"
 
-########################################################################################
-#                               PARAMETRAGE EMAIL                                      #
-########################################################################################
-# Destinataires des e-mails séparés par des virgules (ex : "dev1@example.com,dev2@example.com")
-EMAIL_RECIPIENTS="dev@example.com"
+# AWS SES : Access Key, Secret, Region et From
+# AWS_SES_ACCESS_KEY="AKIAxxxxxxx"
+# AWS_SES_SECRET_KEY="yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+# AWS_SES_REGION="us-east-1"
+# AWS_SES_FROM="no-reply@votre-domaine.com"
 
-# Mode silencieux pour l'installation du mailer (1 = oui, 0 = non)
-SILENT_INSTALL=1
+# GMAIL SMTP : Pour un envoi SMTP direct via un compte Gmail
+# SMTP_HOST="smtp.gmail.com"
+# SMTP_PORT="587"
+# SMTP_USER="votreAdresse@gmail.com"
+# SMTP_PASS="motDePasseOuAppPassword"
+# SMTP_FROM="votreAdresse@gmail.com"
 
-########################################################################################
-#                               PARAMETRAGE TESTS                                      #
-########################################################################################
-# COMMANDES DE TEST
+# Mode silencieux pour l'installation du mailer (1 = oui)
+# SILENT_INSTALL=1
+
+###< PARAMETRAGE EMAIL ###
+
+###> PARAMETRAGE TESTS ###
 # Indiquez la commande à exécuter avant le commit/push pour valider le code.
 # Si cette commande échoue (code retour != 0), le push est annulé.
-# Exemples :
-# TEST_COMMAND="./run_tests.sh"
-# TEST_COMMAND="npm test"
-TEST_COMMAND="./run_tests.sh"
+# Exemple : TEST_COMMAND="./run_tests.sh"
+# TEST_COMMAND=""
+###< PARAMETRAGE TESTS ###
 
-########################################################################################
-#                               PARAMETRAGE QUALITE/LINTING                            #
-########################################################################################
-# COMMANDES DE QUALITÉ
+###> PARAMETRAGE QUALITE/LINTING ###
 # Indiquez la commande à exécuter pour lancer un linter ou un outil de contrôle qualité.
 # Par exemple : QUALITY_COMMAND="npm run lint"
 # Le script exécutera cette commande avant le commit (si -q est utilisé).
 # QUALITY_COMMAND="npm run lint"
+###< PARAMETRAGE QUALITE/LINTING ###
 
-########################################################################################
-#                                PARAMETRAGE CI/CD                                     #
-########################################################################################
-# URL pour déclencher un pipeline CI après le push (facultatif)
-# Ex : CI_TRIGGER_URL="https://ci.example.com/trigger?token=XYZ"
-# CI_TRIGGER_URL=""
+###>  PARAMETRAGE CI/CD ###
+# URL pour déclencher un pipeline CI après le push.
+# Par exemple, si vous avez un job CI déclenchable par une URL:
+# CI_TRIGGER_URL="https://ci.example.com/trigger?token=XYZ"
+# CI_TRIGGER_URL=
+###<  PARAMETRAGE CI/CD ###
 
-########################################################################################
-#                            PARAMETRAGE DES PLATEFORMES GIT                           #
-########################################################################################
+###> PARAMETRAGE DES PLATEFORMES GIT ###
 # Choisissez la plateforme cible : gitlab, github, bitbucket
-PLATFORM="gitlab"
+# Exemple : PLATFORM="gitlab"
+# PLATFORM=github
+###< PARAMETRAGE DES PLATEFORMES GIT ###
 
-########################################################################################
-#                      PARAMETRAGE BITBUCKET/GITHUB (Optionnel)                       #
-########################################################################################
+###> PARAMETRAGE BITBUCKET/GITHUB ###
 # BITBUCKET (si PLATFORM=bitbucket)
 # BITBUCKET_WORKSPACE="monworkspace"
 # BITBUCKET_REPO_SLUG="monrepo"
 # BITBUCKET_USER="monuser"
 # BITBUCKET_APP_PASSWORD="monAppPassword"
-
+#
 # GITHUB (si PLATFORM=github)
-# GITHUB_TOKEN="ghp_votreToken"
-# GITHUB_REPO="username/myrepo"
+# GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# GITHUB_REPO="user/repo"
+###> PARAMETRAGE BITBUCKET/GITHUB ###
 
-########################################################################################
-#                         PARAMETRAGE TICKETS (Optionnel)                              #
-########################################################################################
-# Si vous avez un système de tickets (ex: JIRA) et voulez détecter un pattern dans le commit
-# Ajoutez ici l'URL de base. Le script détectera par ex. ABC-123 dans le commit
-# et proposera un lien https://jira.example.com/browse/ABC-123
+###> PARAMETRAGE TICKETS JIRA, REDMINE, GITHUB, GITLAB, ETC. ###
+# Si vous avez un système de tickets (JIRA), le script détecte le pattern dans le commit.
+# Ajoutez ici le pattern de ticket si vous souhaitez un lien spécifique.
+# Par exemple : TICKET_BASE_URL="https://jira.example.com/browse/"
 # TICKET_BASE_URL="https://jira.example.com/browse/"
-
-########################################################################################
-#                             FIN DE LA CONFIGURATION                                  #
-########################################################################################
+###< PARAMETRAGE TICKETS JIRA, REDMINE, GITHUB, GITLAB, ETC. ###
 ```
 
 En l'absence de certaines variables, les fonctionnalités associées seront ignorées ou dégradées.
@@ -210,7 +227,7 @@ En l'absence de certaines variables, les fonctionnalités associées seront igno
 Sans aucune option, le script propose un flux par défaut :
 
 ```plaintext
-./git_push_automation.sh
+git_push_automation.sh
 ```
 
 Celui-ci :
@@ -227,50 +244,50 @@ Celui-ci :
 Le script supporte de nombreuses options (les passer en ligne de commande). Pour les voir :
 
 ```plaintext
-./git_push_automation.sh -h
+git_push_automation.sh -h
 ```
 
 ## Options principales
 
 | Option | Argument | Description | Exemple |
 | --- | --- | --- | --- |
-| `-f` | `[files]` | Spécifiez les fichiers à ajouter. `.`pour tous. | `./git_push_automation.sh -f "."` |
-| `-m` | `[message]` | Message de commit (Type : Description) | `./git_push_automation.sh -m "Bug: Fix crash"` |
-| `-b` | `[branch]` | Spécifier la branche distante pour le push | `./git_push_automation.sh -b feature-xyz` |
-| `-p` | Aucun | Effectuer un `git pull`avant le push | `./git_push_automation.sh -p` |
-| `-M` | `[branch]` | Fusion une branche avant le push | `./git_push_automation.sh -M dev` |
-| `-r` | `[repo-dir]` | Gère plusieurs dépôts Git dans un répertoire | `./git_push_automation.sh -r ./multi_repos` |
-| `-v` | Aucun | Mode verbeux | `./git_push_automation.sh -v` |
-| `-d` | Aucun | Mode dry-run (simulation, aucune action réelle) | `./git_push_automation.sh -d` |
-| `-h` | Aucun | Affiche l'aide | `./git_push_automation.sh -h` |
-| `-g` | Aucun | Signez le commit avec GPG | `./git_push_automation.sh -g` |
-| `-R` | `[branch]` | Rebase sur la branche précise avant le push | `./git_push_automation.sh -R main` |
-| `-t` | Aucun | Lancez les tests avant commit/push (nécessite TEST_COMMAND) | `./git_push_automation.sh -t` |
-| `-T` | `[tag_name]` | Créez un tag et une release sur la plateforme | `./git_push_automation.sh -T v1.0.0` |
-| `-H` | Aucun | Génère un rapport HTML local | `./git_push_automation.sh -H` |
-| `-C` | Aucun | Résolution automatique des conflits | `./git_push_automation.sh -C` |
+| `-f` | `[files]` | Spécifiez les fichiers à ajouter. `.`pour tous. | `git_push_automation.sh -f "."` |
+| `-m` | `[message]` | Message de commit (Type : Description) | `git_push_automation.sh -m "Bug: Fix crash"` |
+| `-b` | `[branch]` | Spécifier la branche distante pour le push | `git_push_automation.sh -b feature-xyz` |
+| `-p` | Aucun | Effectuer un `git pull`avant le push | `git_push_automation.sh -p` |
+| `-M` | `[branch]` | Fusion une branche avant le push | `git_push_automation.sh -M dev` |
+| `-r` | `[repo-dir]` | Gère plusieurs dépôts Git dans un répertoire | `git_push_automation.sh -r ./multi_repos` |
+| `-v` | Aucun | Mode verbeux | `git_push_automation.sh -v` |
+| `-d` | Aucun | Mode dry-run (simulation, aucune action réelle) | `git_push_automation.sh -d` |
+| `-h` | Aucun | Affiche l'aide | `git_push_automation.sh -h` |
+| `-g` | Aucun | Signez le commit avec GPG | `git_push_automation.sh -g` |
+| `-R` | `[branch]` | Rebase sur la branche précise avant le push | `git_push_automation.sh -R main` |
+| `-t` | Aucun | Lancez les tests avant commit/push (nécessite TEST_COMMAND) | `git_push_automation.sh -t` |
+| `-T` | `[tag_name]` | Créez un tag et une release sur la plateforme | `git_push_automation.sh -T v1.0.0` |
+| `-H` | Aucun | Génère un rapport HTML local | `git_push_automation.sh -H` |
+| `-C` | Aucun | Résolution automatique des conflits | `git_push_automation.sh -C` |
 
 ## Options Avancées
 
 | Option | Argument | Description | Exemple |
 | --- | --- | --- | --- |
-| `-k` | Aucun | Gérer les hooks Git (pre-commit, pre-push) | `./git_push_automation.sh -k` |
-| `-S` | Aucun | Gérer les sous-modules (init, sync, update) | `./git_push_automation.sh -S` |
-| `-q` | Aucun | Vérifications qualité (peluches, sécurité) | `./git_push_automation.sh -q` |
-| `-B` | `[branch]` | Comparez la branche courante avec`[branch]` | `./git_push_automation.sh -B main` |
-| `-P` | `[N]` | Exporter les N derniers commits en patchs (dans ./patches) | `./git_push_automation.sh -P 5` |
-| `-x` | Aucun | Nettoyer les branches locales fusionnées | `./git_push_automation.sh -x` |
-| `-E` | Aucun | Générer des statistiques de commits (top auteurs, nb par type) | `./git_push_automation.sh -E` |
-| `-I` | Aucun | Tickets d'intégration (ex: JIRA), lie le commit à un ticket | `./git_push_automation.sh -I` |
-| `-U` | Aucun | Déclencher un pipeline CI après le push (CI_TRIGGER_URL requis) | `./git_push_automation.sh -U` |
-| `-L` | Aucun | Lire la release (après création de tag) dans release_history.log | `./git_push_automation.sh -L` |
+| `-k` | Aucun | Gérer les hooks Git (pre-commit, pre-push) | `git_push_automation.sh -k` |
+| `-S` | Aucun | Gérer les sous-modules (init, sync, update) | `git_push_automation.sh -S` |
+| `-q` | Aucun | Vérifications qualité (peluches, sécurité) | `git_push_automation.sh -q` |
+| `-B` | `[branch]` | Comparez la branche courante avec`[branch]` | `git_push_automation.sh -B main` |
+| `-P` | `[N]` | Exporter les N derniers commits en patchs (dans ./patches) | `git_push_automation.sh -P 5` |
+| `-x` | Aucun | Nettoyer les branches locales fusionnées | `git_push_automation.sh -x` |
+| `-E` | Aucun | Générer des statistiques de commits (top auteurs, nb par type) | `git_push_automation.sh -E` |
+| `-I` | Aucun | Tickets d'intégration (ex: JIRA), lie le commit à un ticket | `git_push_automation.sh -I` |
+| `-U` | Aucun | Déclencher un pipeline CI après le push (CI_TRIGGER_URL requis) | `git_push_automation.sh -U` |
+| `-L` | Aucun | Lire la release (après création de tag) dans release_history.log | `git_push_automation.sh -L` |
 
 ## 7. Scénarios d'utilisation
 
 ### **7.1 Exécution simple avec tests et rapport HTML :**
 
 ```bash
-./git_push_automation.sh -t -H
+git_push_automation.sh -t -H
 ```
 
 - Lance les tests (`TEST_COMMAND`) avant le commit/push.
@@ -279,7 +296,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 ### **7.2. Exécuter en mode simulation (dry-run) et gérer des sous-modules, hooks, qualité :**
 
 ```bash
-./git_push_automation.sh -d -k -S -q
+git_push_automation.sh -d -k -S -q
 ```
 
 - **Aucune** action réelle n’est effectuée (`-d` = dry-run).
@@ -290,13 +307,13 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 ### 7.3. Créer un tag, lancer tests + qualité, exporter 5 derniers commits en patch
 
 ```bash
-./git_push_automation.sh -t -q -T v2.0.0 -H -P 5
+git_push_automation.sh -t -q -T v2.0.0 -H -P 5
 ```
 
 ### **7.4.** Comparer la branche courante avec `main`, nettoyer les branches fusionnées, déclencher CI
 
 ```bash
-./git_push_automation.sh -B main -x -U
+git_push_automation.sh -B main -x -U
 ```
 
 - Affiche le diff entre la branche courante et `main` (`-B main`).
@@ -306,7 +323,7 @@ Le script supporte de nombreuses options (les passer en ligne de commande). Pour
 ### **7.5.** Lier un ticket, générer des stats, exécuter tests & qualité sur une branche spécifique
 
 ```bash
-./git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
+git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
 ```
 
 - Message de commit : **Tâche: Ajout feature Y**.
@@ -347,7 +364,7 @@ Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y
 - Exemple de log :
 
   ```plaintext
-  2024-01-01 10:15:42 [INFO] : Fichier de log créé : ./git_push_automation.log
+  2024-01-01 10:15:42 [INFO] : Fichier de log créé : git_push_automation.log
   2024-01-01 10:15:42 [INFO] : Démarrage du script v3.1.0
   2024-01-01 10:15:43 [INFO] : Fichiers à ajouter : .
   2024-01-01 10:15:45 [ERROR] : Fichier 'inexistant.txt' inexistant.
@@ -407,15 +424,16 @@ Le **Git Push Automation – Version Avancée** permet de :
 Il suffit de configurer correctement votre fichier `.env_git_push_automation`, d’installer (optionnellement) les outils nécessaires, puis de lancer :
 
 ```bash
-./git_push_automation.sh
+git_push_automation.sh
 ```
 
 ou encore :
 
 ```bash
-./git_push_automation.sh [OPTIONS]
+git_push_automation.sh [OPTIONS]
 ```
 
-Pour aller plus loin, vous pouvez **forker** le script et adapter davantage la logique interne (hooks, messages, CI, etc.) à vos besoins spécifiques.
+Vous pouvez me contacter pour toute question ou suggestion.
+email : [paterne81@hotmail.fr](https://github.com/teamflp/git_push_automation)
 
 Bonne utilisation !

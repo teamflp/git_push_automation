@@ -902,7 +902,7 @@ function perform_push() {
 # PLATFORM-AGNOSTIC ABSTRACTION
 # VARIABLE PLATFORM DOIT ÊTRE DÉFINIE DANS LE FICHIER DE CONFIGURATION
 # (ex: export PLATFORM="github" ou "gitlab" ou "bitbucket" etc.)
-# SELON PLATFORM, ON APPELLE LES FONCTIONS SPÉCIFIQUES
+# SELON PLATFORM, ON APPELLE LES FONCTIONS SPÉCIFIQUES 
 ###############################################################################
 
 function notify_platform_after_push() {
@@ -1232,6 +1232,138 @@ function set_email_recipients() {
     fi
 }
 
+# Envoie de notification via SendGrid
+function send_email_via_sendgrid() {
+  local to="$1"      # Adresse destinataire
+  local subject="$2"
+  local content="$3"
+
+  # Variables d'environnement attendues
+  local sg_api_key="$SENDGRID_API_KEY"
+  local sg_from="$SENDGRID_FROM"
+
+  # Construction du JSON pour l'API SendGrid
+  local payload
+  payload=$(jq -n \
+    --arg from "$sg_from" \
+    --arg to "$to" \
+    --arg subj "$subject" \
+    --arg body "$content" \
+    '{
+      "personalizations": [{
+        "to": [{"email": $to}],
+        "subject": $subj
+      }],
+      "from": {"email": $from},
+      "content": [{
+        "type": "text/plain",
+        "value": $body
+      }]
+    }'
+  )
+
+  # Appel API SendGrid
+  response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+    --request POST \
+    --url "https://api.sendgrid.com/v3/mail/send" \
+    --header "Authorization: Bearer $sg_api_key" \
+    --header "Content-Type: application/json" \
+    --data "$payload")
+
+  http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+
+  if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+    echo "E-mail envoyé via SendGrid à $to (HTTP $http_status)."
+  else
+    echo "Erreur envoi SendGrid (HTTP $http_status): $body"
+  fi
+}
+
+
+# Envoie de notification via Mailgun
+# Cette fonction utilise l'API Mailgun pour envoyer un e-mail.
+function send_email_via_mailgun() {
+  local to="$1"
+  local subject="$2"
+  local content="$3"
+
+  # Variables d'environnement attendues
+  local mg_api_key="$MAILGUN_API_KEY"
+  local mg_domain="$MAILGUN_DOMAIN"
+  local mg_from="$MAILGUN_FROM"
+
+  # Mailgun attend un POST vers l'API, ex:
+  # https://api.mailgun.net/v3/votre-domaine.com/messages
+  # Avec form-data: from, to, subject, text...
+
+  response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+    -X POST "https://api.mailgun.net/v3/$mg_domain/messages" \
+    -u "api:$mg_api_key" \
+    -F from="$mg_from" \
+    -F to="$to" \
+    -F subject="$subject" \
+    -F text="$content")
+
+  http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+
+  if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+    echo "E-mail envoyé via Mailgun à $to (HTTP $http_status)."
+  else
+    echo "Erreur envoi Mailgun (HTTP $http_status): $body"
+  fi
+}
+
+# Envoie de notification via Mailjet
+# Cette fonction utilise l'API Mailjet pour envoyer un e-mail.
+function send_email_via_mailjet() {
+  local to="$1"
+  local subject="$2"
+  local content="$3"
+
+  # Variables d'environnement attendues
+  local mj_api_key="$MAILJET_API_KEY"
+  local mj_secret_key="$MAILJET_SECRET_KEY"
+  local mj_from="$MAILJET_FROM"
+
+  # Construction du JSON pour Mailjet
+  local payload
+  payload=$(jq -n \
+    --arg from "$mj_from" \
+    --arg to "$to" \
+    --arg subj "$subject" \
+    --arg body "$content" \
+    '{
+      "Messages": [
+        {
+          "From": {"Email": $from},
+          "To": [{"Email": $to}],
+          "Subject": $subj,
+          "TextPart": $body
+        }
+      ]
+    }'
+  )
+
+  # Appel API Mailjet
+  response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+    --request POST \
+    --url "https://api.mailjet.com/v3.1/send" \
+    --header "Content-Type: application/json" \
+    --user "$mj_api_key:$mj_secret_key" \
+    --data "$payload")
+
+  http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+
+  if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+    echo "E-mail envoyé via Mailjet à $to (HTTP $http_status)."
+  else
+    echo "Erreur envoi Mailjet (HTTP $http_status): $body"
+  fi
+}
+
 function send_notification() {
     local email_user
     email_user=$(git config --get user.email)
@@ -1480,25 +1612,37 @@ Voir le commit : $commit_url
 Cordialement,
 Votre script Git"
 
-            if [ "$DRY_RUN" == "y" ]; then
-                echo_color "$GREEN" "Simulation : e-mail à $EMAIL_RECIPIENTS"
-                echo_color "$GREEN" "Sujet : $subject"
-                echo "$email_body"
+           if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : Envoi e-mail via $EMAIL_PROVIDER à $EMAIL_RECIPIENTS"
+            echo_color "$GREEN" "Sujet : $subject"
+            echo "$email_body"
+        else
+            if [ -z "$EMAIL_PROVIDER" ]; then
+                echo_color "$RED" "Erreur : Pas de EMAIL_PROVIDER défini (sendgrid, mailgun, mailjet...)."
+                log_action "ERROR" "Aucun EMAIL_PROVIDER défini."
             else
-                echo "$email_body" | mail -s "$subject" "$EMAIL_RECIPIENTS"
-                if [ $? -eq 0 ]; then
-                    echo_color "$GREEN" "Email envoyé à : $EMAIL_RECIPIENTS"
-                    log_action "INFO" "Email envoyé."
-                else
-                    echo_color "$RED" "Erreur envoi e-mail."
-                    log_action "ERROR" "Email fail."
-                fi
+                # Selon la valeur de $EMAIL_PROVIDER, on appelle la bonne fonction
+                case "$EMAIL_PROVIDER" in
+                  "sendgrid")
+                    send_email_via_sendgrid "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                    ;;
+                  "mailgun")
+                    send_email_via_mailgun "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                    ;;
+                  "mailjet")
+                    send_email_via_mailjet "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                    ;;
+                  *)
+                    echo_color "$RED" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
+                    log_action "ERROR" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
+                    ;;
+                esac
             fi
         fi
     else
         log_action "INFO" "EMAIL_RECIPIENTS non défini, pas d'e-mail."
     fi
-
+    
     #### Notification Mattermost ####
     if [ -n "$MATTERMOST_WEBHOOK_URL" ]; then
         local mm_message="**Nouveau push** sur *$BRANCH_NAME* par $email_user.
@@ -2413,7 +2557,6 @@ function collect_feedback() {
         log_action "INFO" "Feedback collecté."
     fi
 }
-
 
 ###############################################################################
 # MAIN
