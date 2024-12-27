@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
