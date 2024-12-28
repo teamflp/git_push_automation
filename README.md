@@ -10,7 +10,7 @@
 
 ## 1. Introduction
 
-Le script **Git Push Automation – Version Avancée** est un outil en Bash qui facilite et renforce le processus de *push* Git en ajoutant :
+Le script **Git Push Automation** est un outil en Bash qui facilite et renforce le processus de *push* Git en ajoutant :
 
 - Un flux par défaut (sauvegarde, ajout, commit, et push).
 - Des options avancées :
@@ -91,7 +91,7 @@ Vous verrez alors l’aide avec la liste des options disponibles.
 
 ## 5. Configuration : `.env.git_push_automation`
 
-- Par défaut, le script cherche un fichier `.env.git_push_automatio` à la racine.
+- Par défaut, le script cherche un fichier `.env.git_push_automation` à la racine.
 
 - Vous pouvez copier l’exemple fourni (s’il y en a un) ou créer votre propre fichier.
 
@@ -223,6 +223,19 @@ En l'absence de certaines variables, les fonctionnalités associées seront igno
 ## 6. Utilisation
 
 ### 6.1. Exécution simple (flux interactif)
+
+Dans votre fichier .gitignore, ajoutez les fichiers suivants pour ne pas le suivre dans le dépôt :
+
+```plaintext
+/.vscode/
+/.env
+/.env.git_push_automation
+/git_push_automation.log
+/backup/
+/reports/
+/patches/
+/stats/
+```
 
 Sans aucune option, le script propose un flux par défaut :
 
