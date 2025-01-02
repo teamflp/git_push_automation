@@ -1793,7 +1793,7 @@ function send_notification() {
     #### Notification Slack ####
     if [ -n "$SLACK_WEBHOOK_URL" ]; then
         local slack_payload
-        slack_payload=$(jq -n \
+       slack_payload=$(jq -n \
             --arg channel "$SLACK_CHANNEL" \
             --arg username "$SLACK_USERNAME" \
             --arg emoji "$SLACK_ICON_EMOJI" \
@@ -1803,8 +1803,7 @@ function send_notification() {
             --arg commit_url "$commit_url" \
             --arg text "$common_message" \
             --arg ticket_url "$TICKET_URL" \
-            '
-            {
+            '{
                 "channel": $channel,
                 "username": $username,
                 "icon_emoji": $emoji,
@@ -1820,8 +1819,8 @@ function send_notification() {
                 },
                 {
                     "type": "section",
-                    # On construit le tableau "fields" d’un coup :
-                    "fields": if $ticket_url == "" then
+                    # ⬇ La liste "fields" entre parenthèses ⬇
+                    "fields": (
                     [
                         {
                         "type": "mrkdwn",
@@ -1836,26 +1835,18 @@ function send_notification() {
                         "text": "*Auteur :*\n\($email_user)"
                         }
                     ]
-                    else
-                    [
-                        {
-                        "type": "mrkdwn",
-                        "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
-                        },
-                        {
-                        "type": "mrkdwn",
-                        "text": "*Branche :*\n\($branch_name)"
-                        },
-                        {
-                        "type": "mrkdwn",
-                        "text": "*Auteur :*\n\($email_user)"
-                        },
-                        {
-                        "type": "mrkdwn",
-                        "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
-                        }
-                    ]
-                    end
+                    # On applique la condition if ... then ... else ... end
+                    | if $ticket_url == "" then
+                        .
+                        else
+                        . + [
+                            {
+                            "type": "mrkdwn",
+                            "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
+                            }
+                        ]
+                        end
+                    )
                 },
                 {
                     "type": "divider"
@@ -1868,9 +1859,9 @@ function send_notification() {
                     }
                 }
                 ]
-            }
-            '
+            }'
         )
+
 
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : Notification Slack."
