@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="1.1.1"
+SCRIPT_VERSION="1.1.2"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
@@ -82,6 +82,135 @@ function log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] : $message" >> "$LOG_FILE"
     if [ "$VERBOSE" == "y" ]; then
         echo_color "$BLUE" "[$level] $message"
+    fi
+}
+
+###############################################################################
+# 3. FONCTIONS DE PARSING SÉMANTIQUE
+#    parse_semver() et compare_semver()
+###############################################################################
+function parse_semver() {
+    # Convertit "v1.2.10" => 1002010 pour comparer numériquement
+    local version="$1"
+    # Supprime "v" si présent
+    version="${version#v}"
+
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$version"
+    major=${major:-0}
+    minor=${minor:-0}
+    patch=${patch:-0}
+
+    # Ex: M=1, m=2, p=10 => (1 * 1 000 000) + (2 * 1 000) + 10 = 1002010
+    echo $(( major * 1000000 + minor * 1000 + patch ))
+}
+
+function compare_semver() {
+    # Compare deux versions semver ex: "v1.2.3" "v1.2.10"
+    # Retourne:
+    #   0 si v1 == v2
+    #   1 si v1 >  v2
+    #  -1 si v1 <  v2
+    local v1="$1"
+    local v2="$2"
+
+    local int1
+    local int2
+    int1=$(parse_semver "$v1")
+    int2=$(parse_semver "$v2")
+
+    if (( int1 > int2 )); then
+        echo 1
+    elif (( int1 < int2 )); then
+        echo -1
+    else
+        echo 0
+    fi
+}
+
+###############################################################################
+# 4. FONCTION DE MISE À JOUR
+#    perform_script_update() télécharge le script et le remplace
+###############################################################################
+function perform_script_update() {
+    echo_color "$BLUE" "Téléchargement de la dernière version du script..."
+
+    # Commande de mise à jour
+    sudo curl -L \
+      "https://raw.githubusercontent.com/teamflp/git_push_automation/master/git_push_automation.sh" \
+      -o /usr/local/bin/git_push_automation || {
+        echo_color "$RED" "Erreur lors du téléchargement de la mise à jour."
+        log_action "ERROR" "Echec de perform_script_update()"
+        exit 1
+      }
+
+    # On rend le script exécutable
+    sudo chmod +x /usr/local/bin/git_push_automation
+
+    echo_color "$GREEN" "Mise à jour terminée. Relancez la commande pour utiliser la nouvelle version."
+    log_action "INFO" "Script mis à jour vers la version distante."
+}
+
+###############################################################################
+# 5. FONCTION D'ORCHESTRATION
+#    check_for_script_update() récupère le tag distant, compare, propose la MAJ
+###############################################################################
+function check_for_script_update() {
+    local repo_owner="teamflp"
+    local repo_name="git_push_automation"
+
+    # Récupère la liste des tags
+    local tags_json
+    tags_json=$(curl -s "https://api.github.com/repos/$repo_owner/$repo_name/tags")
+
+    if [ -z "$tags_json" ]; then
+        echo_color "$YELLOW" "Impossible de récupérer la liste des tags."
+        log_action "WARN" "Impossible de récupérer liste tags GitHub."
+        return
+    fi
+
+    local latest_tag=""
+    local first_loop=true
+
+    # Parcourt chaque tag name
+    local tag_name
+    while read -r tag_name; do
+        if [ "$first_loop" = true ]; then
+            latest_tag="$tag_name"
+            first_loop=false
+        else
+            local cmp
+            cmp=$(compare_semver "$tag_name" "$latest_tag")
+            if [ "$cmp" -eq 1 ]; then
+                # tag_name > latest_tag
+                latest_tag="$tag_name"
+            fi
+        fi
+    done < <(echo "$tags_json" | jq -r '.[].name')
+
+    if [ -z "$latest_tag" ]; then
+        echo_color "$YELLOW" "Aucun tag trouvé sur le dépôt $repo_owner/$repo_name."
+        log_action "WARN" "Aucun tag trouvé."
+        return
+    fi
+
+    # Compare latest_tag à SCRIPT_VERSION
+    local cmp
+    cmp=$(compare_semver "$latest_tag" "$SCRIPT_VERSION")
+    if [ "$cmp" -eq 1 ]; then
+        echo_color "$BLUE" "Nouvelle version disponible : $latest_tag (actuelle : $SCRIPT_VERSION)."
+        echo_color "$YELLOW" "Voulez-vous mettre à jour ? (y/n)"
+        read -r answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            perform_script_update
+        else
+            echo_color "$YELLOW" "Mise à jour annulée. Vous restez en $SCRIPT_VERSION."
+        fi
+    elif [ "$cmp" -eq 0 ]; then
+        echo_color "$GREEN" "Vous êtes déjà à jour (version $SCRIPT_VERSION)."
+    else
+        echo_color "$YELLOW" "Le tag distant ($latest_tag) est inférieur à votre version ($SCRIPT_VERSION)."
+        log_action "INFO" "Le script local est plus récent ?"
     fi
 }
 
@@ -264,8 +393,8 @@ LINK_TICKETS="n"
 TRIGGER_CI="n"
 LOG_RELEASE="n"
 ROLLBACK_COMMITS=""  # -X [ncommits]   -> rollback
-DO_CHERRY_PICK="n"   # -Y     -> cherry-pick interactif
-DO_REVIEW_DIFF="n"   # -Z     -> review/diff complet
+DO_CHERRY_PICK="n"   # -Y              -> cherry-pick interactif
+DO_REVIEW_DIFF="n"   # -Z              -> review/diff complet
 CREATE_PR="n"        # --create-pr     -> création d'une Pull Request sur GitHub
 CREATE_MR="n"        # --create-mr     -> création d'une Merge Request sur GitLab
 CI_FRIENDLY="n"      # --ci-friendly   -> mode sans interaction (CI)
@@ -2709,7 +2838,6 @@ function main_without_repo_dir() {
     default_actions_sequence
 }
 
-
 function main_menu() {
     local current_action=$1
     while true; do
@@ -2789,32 +2917,41 @@ function collect_feedback() {
 function main() {
     echo_color "$BLUE$BOLD" "Lancement du script (Version $SCRIPT_VERSION)."
     log_action "INFO" "Démarrage du script v$SCRIPT_VERSION"
+
     process_options "$@"
     log_action "INFO" "Options : $*"
 
     load_config
     check_dependencies
     check_permissions
+
+    # -- Vérification de mise à jour du script via l'API GitHub --
+    check_for_script_update  # Ici, on peut comparer la version distante (tags GitHub) à SCRIPT_VERSION
+
     check_git_repo || exit 1
     check_user_email || exit 1
 
+    # -- Si l'utilisateur a spécifié un répertoire multi-dépôts --
     if [ -n "$MULTI_REPO_DIR" ]; then
         handle_multiple_repositories "$MULTI_REPO_DIR" "$@"
         exit 0
     fi
 
+    # -- Exécuter les actions principales (mode par défaut ou avec arguments) --
     if [ $# -eq 0 ]; then
         main_without_repo_dir
     else
         main_without_repo_dir "$@"
     fi
 
+    # -- Indications post-push ou simulation --
     if [ "$DRY_RUN" != "y" ]; then
         echo_color "$GREEN" "Vérifiez la plateforme distante pour les modifications."
     else
         echo_color "$YELLOW" "Simulation terminée, aucune modification réelle."
     fi
 
+    # -- Collecte éventuelle de feedback --
     collect_feedback
 }
 
