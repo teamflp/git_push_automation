@@ -1,7 +1,7 @@
 # Documentation Complète du Script
 
 **Nom** : Git Push Automation – Version Avancée\
-**Version** : 1.1.1\
+**Version** : 1.1.2\
 **Auteur** : Paterne G. G.\
 **Email** : [paterne81@hotmail.fr](mailto:paterne81@hotmail.fr)\
 **Pour** : Équipe DevOps / Dev
@@ -63,7 +63,7 @@ sudo curl -L \
 sudo chmod +x /usr/local/bin/git_push_automation
 ```
 
-Vous pouvez maintenant utiliser la commande  pour vérifier le fonctionnement du script:
+Vous pouvez maintenant utiliser la commande pour vérifier le fonctionnement du script:
 
 ```bash
 git_push_automation -h
@@ -82,7 +82,7 @@ Ainsi, même si vous avez installé le script globalement, le script chargera la
 Pour vérifier le bon fonctionnement, vous pouvez exécuter :
 
 ```bash
-git_push_automation.sh -h
+git_push_automation -h
 ```
 
 (s’il est installé correctement) :
@@ -288,28 +288,35 @@ git_push_automation.sh -h
 | `-S` | Aucun | Gérer les sous-modules (init, sync, update) | `git_push_automation.sh -S` |
 | `-q` | Aucun | Vérifications qualité (peluches, sécurité) | `git_push_automation.sh -q` |
 | `-B` | `[branch]` | Comparez la branche courante avec`[branch]` | `git_push_automation.sh -B main` |
-| `-P` | `[N]` | Exporter les N derniers commits en patchs (dans ./patches) | `git_push_automation.sh -P 5` |
+| `-P` | `[n]` | Exporter les n derniers commits en patchs (dans ./patches) | `git_push_automation.sh -P 5` |
 | `-x` | Aucun | Nettoyer les branches locales fusionnées | `git_push_automation.sh -x` |
 | `-E` | Aucun | Générer des statistiques de commits (top auteurs, nb par type) | `git_push_automation.sh -E` |
 | `-I` | Aucun | Tickets d'intégration (ex: JIRA), lie le commit à un ticket | `git_push_automation.sh -I` |
 | `-U` | Aucun | Déclencher un pipeline CI après le push (CI_TRIGGER_URL requis) | `git_push_automation.sh -U` |
 | `-L` | Aucun | Lire la release (après création de tag) dans release_history.log | `git_push_automation.sh -L` |
+| `-X` | `[n]` | Rollback (annuler) les *n* derniers commits (via revert ou reset). | `git_push_automation -X 2` |
+| `-Y` | Aucun | Cherry-pick interactif (permet de prendre un commit d’une autre branche). | `git_push_automation -Y` |
+| `-Z` | Aucun | Afficher un **diff** / review complet avant le push (stat + diff, outil graphique éventuellement). | `git_push_automation -Z` |
+| `-V [type]` | `[type]` | Incrémentation sémantique (`major`, `minor`, ou `patch`) et création automatique d’un nouveau tag. | `git_push_automation -V patch` |
+| `--create-pr` | Aucun | Crée automatiquement une Pull Request (GitHub) après le push. | `git_push_automation --create-pr` |
+| `--create-mr` | Aucun | Crée automatiquement une Merge Request (GitLab) après le push. | `git_push_automation --create-mr` |
+| `--ci-friendly` | Aucun | Mode **non interactif** (idéal pour la CI) : pas de questions posées, comportement “par défaut”. | `git_push_automation --ci-friendly` |
 
-## 7. Scénarios d'utilisation
+## Scénarios d'utilisation
 
-### **7.1 Exécution simple avec tests et rapport HTML :**
+### **Exécution simple avec tests et rapport HTML :**
 
 ```bash
-git_push_automation.sh -t -H
+git_push_automation -t -H
 ```
 
 - Lance les tests (`TEST_COMMAND`) avant le commit/push.
 - Génère ensuite un rapport HTML dans `./reports/report_YYYYMMDD_HHMMSS.html`.
 
-### **7.2. Exécuter en mode simulation (dry-run) et gérer des sous-modules, hooks, qualité :**
+### **Exécuter en mode simulation (dry-run) et gérer des sous-modules, hooks, qualité :**
 
 ```bash
-git_push_automation.sh -d -k -S -q
+git_push_automation -d -k -S -q
 ```
 
 - **Aucune** action réelle n’est effectuée (`-d` = dry-run).
@@ -317,23 +324,23 @@ git_push_automation.sh -d -k -S -q
 - Met à jour/synchronise les sous-modules (`-S`).
 - Lance un check de qualité (`-q` = ex. lint, audit, bandit…).
 
-### 7.3. Créer un tag, lancer tests + qualité, exporter 5 derniers commits en patch
+### Créer un tag, lancer tests + qualité, exporter 5 derniers commits en patch
 
 ```bash
-git_push_automation.sh -t -q -T v2.0.0 -H -P 5
+git_push_automation -t -q -T v2.0.0 -H -P 5
 ```
 
-### **7.4.** Comparer la branche courante avec `main`, nettoyer les branches fusionnées, déclencher CI
+### Comparer la branche courante avec `main`, nettoyer les branches fusionnées, déclencher CI
 
 ```bash
-git_push_automation.sh -B main -x -U
+git_push_automation -B main -x -U
 ```
 
 - Affiche le diff entre la branche courante et `main` (`-B main`).
 - Nettoie les branches locales fusionnées (`-x`).
 - Après push, déclenche le pipeline CI (`-U`).
 
-### **7.5.** Lier un ticket, générer des stats, exécuter tests & qualité sur une branche spécifique
+### Lier un ticket, générer des stats, exécuter tests & qualité sur une branche spécifique
 
 ```bash
 git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
@@ -347,7 +354,117 @@ git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
 
 ---
 
-## 8. Fonctionnalités principales et avancées
+### Rollback de 2 commits
+
+```bash
+git_push_automation -X 2
+```
+
+- Le script va demander si vous souhaitez faire un `revert` ou un `reset --hard` (sauf en mode CI-friendly, où il fera un revert par défaut).
+- Ensuite, il continue le flux normal (hooks, submodules, etc.) si la commande n’est pas interrompue.
+
+### Cherry-pick interactif + Review avant le push
+
+```bash
+git_push_automation -Y -Z
+```
+
+- **-Y** : vous propose de choisir la branche source, liste les derniers commits, et vous demande de saisir le hash du commit à cherry-pick.
+- **-Z** : juste avant la séquence d’actions par défaut, le script affichera un résumé (`git diff --stat`), puis vous demandera si vous voulez un diff complet ou ouvrir un outil graphique.
+
+Vous pourrez ensuite poursuivre la séquence standard (backup, add_files, create_commit, push).
+
+### Incrémenter la version patch et créer un tag
+
+```bash
+git_push_automation -V patch
+```
+
+- Le script repère le dernier tag `vX.Y.Z`, incrémente `Z` de +1 pour créer `vX.Y.(Z+1)`.
+- Il pousse le tag si vous acceptez de pousser la branche.
+
+### Créer une Pull Request après le push
+
+```bash
+git_push_automation --create-pr
+```
+
+- Après l’exécution du `perform_push()`, le script appellera `create_github_pr()`.
+- Attention : vous devez avoir `PLATFORM=github` dans votre `.env` et l’outil `gh` (ou la logique `curl` vers l’API GitHub) configuré.
+- Le script ouvrira une PR de la branche courante vers la branche principale configurée (souvent `main` ou `master`).
+
+### Créer une Merge Request sur GitLab
+
+```bash
+git_push_automation --create-mr
+```
+
+- Après le push, le script appellera `create_gitlab_mr()`.
+- Vous devez avoir `PLATFORM=gitlab`, `GITLAB_PROJECT_ID` et `GITLAB_TOKEN` configurés dans `.env`.
+
+### Mode CI-friendly (non interactif)
+
+```bash
+git_push_automation --ci-friendly -f . -m "Bug: Correction rapide" -b develop -q -U
+```
+
+- **Pas de questions** : Le script ne vous demandera **pas** de choisir (y/n) pour un pull, un revert, etc.
+- **-f .** : ajoute tous les fichiers.
+- **-m** : message de commit.
+- **-b** : branche `develop`.
+- **-q** : exécute le `run_quality_checks`.
+- **-U** : déclenche pipeline CI après le push.
+
+*==🟡(Vous pouvez combiner==* `--create-pr` *==🟡en mode CI, pour créer automatiquement la PR après le push.)==*
+
+## Points de configuration importants
+
+- **Pour le rollback** : Si vous êtes **en CI** (`--ci-friendly`), il fera un revert par défaut, sans vous demander. Dans un usage **local**, vous aurez un prompt pour choisir `revert` ou `reset --hard`.
+
+- **Pour la création de PR sur GitHub** :
+
+  - Nécessite `PLATFORM=github`
+  - Nécessite un jeton ou l’outil `gh` (GitHub CLI) installé, ou un script `curl` bien configuré.
+
+- **Pour la création de MR sur GitLab** :
+
+  - Nécessite `PLATFORM=gitlab`
+  - Variables `GITLAB_PROJECT_ID` et `GITLAB_TOKEN` doivent être définies dans `.env`.
+
+- **Pour l’incrémentation sémantique** :
+
+  - Le script détecte le dernier tag au format `vX.Y.Z`.
+  - S’il ne trouve pas de tag, il part de `v0.0.0`.
+  - Incrémente selon la valeur (`major`, `minor`, `patch`) et pousse le nouveau tag sur `origin`.
+
+## Exemples d’enchaînements concrets
+
+**Annuler 1 commit, faire un cherry-pick, review, push + PR** :
+
+```bash
+git_push_automation -X 1 -Y -Z --create-pr -f . -m "Refactor: Correction après revert" -b featureX
+```
+
+- Annule le dernier commit,
+- Cherry-pick un commit d’une autre branche,
+- Affiche un diff complet,
+- Ensuite exécute le flux standard : backup, add (`-f .`), commit (`-m`), push (`-b featureX`),
+- Crée enfin une PR.
+
+**CI pipeline** (non interactif), incluant un version bump patch :
+
+```bash
+git_push_automation --ci-friendly -V patch -f . -m "Bug: Correction d'index hors limites" -b production
+```
+
+- Pas de prompts,
+- Ajoute tous les fichiers,
+- Commit “Bug: Correction…”,
+- Pousse sur `production`,
+- A la fin (dans `collect_feedback()`), bump `vX.Y.Z` -&gt; `vX.Y.(Z+1)` et push le tag.
+- (Si `TRIGGER_CI=y`, déclenche pipeline CI en plus).
+
+## Fonctionnalités principales et avancées
 
  1. **Sauvegarde automatique** : avant d’ajouter des fichiers, le script peut sauvegarder dans `./backup/backup_YYYYMMDD_HHMMSS/`.
  2. **Ajout de fichiers** : possibilité de spécifier une liste de fichiers, ou `.` pour tous.
@@ -370,7 +487,7 @@ git_push_automation.sh -m "Tâche: Ajout feature Y" -b feature-y -t -q -E -I
 
 ---
 
-## 9. Fichier de logs
+## Fichier de logs
 
 Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y sont consignées les actions et erreurs.
 
@@ -386,7 +503,7 @@ Le script écrit (ou crée) un fichier `git_push_automation.log` à la racine. Y
 
 ---
 
-## 10. Mode multi-dépôts
+## Mode multi-dépôts
 
 Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les sous-répertoires qui contiennent un `.git` et exécute la séquence.
 
@@ -394,7 +511,7 @@ Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les s
 
 ---
 
-## 11. Questions fréquentes (FAQ)
+## Questions fréquentes (FAQ)
 
 1. **Que se passe-t-il si un outil manque (ex: npm, mail, etc.) ?**\
    Le script affiche un message d’avertissement ou propose d’installer l’outil (apt-get, yum, brew…).\
@@ -417,36 +534,40 @@ Avec l’option `-r <repo-dir>`, le script itère automatiquement sur tous les s
 
 ---
 
-## 12. Conseils et bonnes pratiques
+## Conseils et bonnes pratiques
 
 - **Sécurisez vos tokens** (GitLab, GitHub, Bitbucket). Ils ne doivent pas être commités en clair dans le dépôt.
 - **Activez la vérification git-secrets** si vous manipulez régulièrement des identifiants ou secrets dans le code.
 - **Vérifiez la configuration Git utilisateur** : le script paramètre `user.email` si vous n’en avez pas, mais c’est mieux de le faire vous-même (ex: `git config --global user.email "dev@example.com"`).
 - **Servez-vous du mode** `dry-run` (`-d`) pour tester et comprendre l’effet des opérations avant de les faire en production.
 
----
-
-## 13. Conclusion
+## Conclusion
 
 Le **Git Push Automation – Version Avancée** permet de :
 
 - Centraliser et automatiser de nombreuses étapes liées au `git push`.
 - Uniformiser les pratiques dans une équipe (messages de commit, tests, qualité, etc.).
 - Gagner du temps et de la fiabilité grâce aux vérifications automatiques, aux hooks et aux notifications.
+- **Ajoutez** les options `-X`, `-Y`, `-Z`, `-V`, `--create-pr`, `--create-mr`, `--ci-friendly` à votre commande.
+- **Combinez**-les avec vos options existantes (`-f, -m, -b, etc.`) pour personnaliser le flux.
+- **Le script** s’occupera d’appeler `rollback_commits`, `cherry_pick_interactive`, `review_changes`, `create_github_pr`, `create_gitlab_mr`, `auto_semver_bump` selon les drapeaux passés.
+- **En mode CI-friendly** (`--ci-friendly`), le script ne posera aucune question et utilisera le comportement par défaut.
+
+Cela vous donne un **contrôle très fin** sur les actions Git et la gestion de vos branches, commits, tags et éventuelles PR/MR sur GitHub/GitLab. Bon usage !
 
 Il suffit de configurer correctement votre fichier `.env_git_push_automation`, d’installer (optionnellement) les outils nécessaires, puis de lancer :
 
 ```bash
-git_push_automation.sh
+git_push_automation
 ```
 
 ou encore :
 
 ```bash
-git_push_automation.sh [OPTIONS]
+git_push_automation [OPTIONS]
 ```
 
-Vous pouvez me contacter pour toute question ou suggestion.
+Vous pouvez me contacter pour toute question ou suggestion.\
 email : [paterne81@hotmail.fr](https://github.com/teamflp/git_push_automation)
 
 Bonne utilisation !

@@ -1,9 +1,11 @@
 /.vscode/
 /.idea/
 /.env
+/.templates/
 /.env.git_push_automation
 /git_push_automation.log
 /backup/
 /reports/
 /patches/
 /stats/
+/Daily/

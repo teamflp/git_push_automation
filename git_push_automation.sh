@@ -129,6 +129,7 @@ function detect_and_install_mailer() {
         linux-gnu*)
             if command -v apt-get &> /dev/null; then
                 echo_color "$BLUE" "Installation mailutils via apt-get..."
+                # shellcheck disable=SC2015
                 sudo apt-get update && sudo apt-get install -y mailutils || {
                     echo_color "$RED" "Échec apt-get mailutils."
                     log_action "ERROR" "apt-get mail fail."
@@ -223,6 +224,13 @@ function usage() {
     echo "  -I               Intégration tickets (lier commit aux tickets JIRA par ex)"
     echo "  -U               Déclencher pipeline CI après push"
     echo "  -L               Loguer la release dans release_history.log"
+    echo "  -X [n]           Rollback (revert ou reset) des n derniers commits"
+    echo "  -Y               Cherry-pick interactif"
+    echo "  -Z               Review/diff complet avant push"
+    echo "  --create-pr      Créer une Pull Request sur GitHub après le push"
+    echo "  --create-mr      Créer une Merge Request sur GitLab après le push"
+    echo "  --ci-friendly    Mode non interactif pour CI (pas de questions posées)"
+    echo "  -V [major|minor|patch]  Incrémenter la version semver et créer un tag"
     exit 1
 }
 
@@ -255,6 +263,13 @@ GENERATE_COMMIT_STATS="n"
 LINK_TICKETS="n"
 TRIGGER_CI="n"
 LOG_RELEASE="n"
+ROLLBACK_COMMITS=""  # -X [ncommits]   -> rollback
+DO_CHERRY_PICK="n"   # -Y     -> cherry-pick interactif
+DO_REVIEW_DIFF="n"   # -Z     -> review/diff complet
+CREATE_PR="n"        # --create-pr     -> création d'une Pull Request sur GitHub
+CREATE_MR="n"        # --create-mr     -> création d'une Merge Request sur GitLab
+CI_FRIENDLY="n"      # --ci-friendly   -> mode sans interaction (CI)
+AUTO_VERSION_BUMP="" # ex: "major", "minor", "patch"
 
 ###############################################################################
 # TRAITEMENT DES OPTIONS
@@ -262,7 +277,14 @@ LOG_RELEASE="n"
 function process_options() {
     if [ $# -eq 0 ]; then return; fi
 
-    while getopts ":f:m:b:M:r:vdhpgR:tT:HCkSqB:P:xEILU" opt; do
+    # Ajoutons X: Y Z et V: dans la liste des options courtes
+    # 'X:' => X requiert un argument (ex: -X 2)
+    # 'Y' et 'Z' => sans argument
+    # 'V:' => V requiert un argument (ex: -V patch)
+    #
+    # => Liste : :f:m:b:M:r:vdhpgR:tT:HCkSqB:P:xEILU X:YZV:
+
+    while getopts ":f:m:b:M:r:vdhpgR:tT:HCkSqB:P:xEILUX:YZV:" opt; do
         case $opt in
             f)
                 if [ "$OPTARG" == "." ]; then
@@ -302,6 +324,21 @@ function process_options() {
             I) LINK_TICKETS="y" ;;
             U) TRIGGER_CI="y" ;;
             L) LOG_RELEASE="y" ;;
+
+            # -- Nouvelles options courtes --
+            X)  # Rollback commits => ex: -X 2
+                ROLLBACK_COMMITS="$OPTARG"
+                ;;
+            Y)  # Cherry-pick interactif => ex: -Y
+                DO_CHERRY_PICK="y"
+                ;;
+            Z)  # Review/diff => ex: -Z
+                DO_REVIEW_DIFF="y"
+                ;;
+            V)  # Version bump => ex: -V patch
+                AUTO_VERSION_BUMP="$OPTARG"
+                ;;
+
             \?)
                 echo_color "$RED" "Option invalide : -$OPTARG"
                 usage
@@ -313,7 +350,31 @@ function process_options() {
         esac
     done
 
+    # À ce stade, OPTIND pointe après les options courtes traitées.
+    # On peut analyser les options longues (type --create-pr, --create-mr, --ci-friendly).
     shift $((OPTIND -1))
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --create-pr)
+                CREATE_PR="y"
+                shift
+                ;;
+            --create-mr)
+                CREATE_MR="y"
+                shift
+                ;;
+            --ci-friendly)
+                CI_FRIENDLY="y"
+                shift
+                ;;
+            *)
+                # On n'a pas d'autre --long-option prévue,
+                # donc on s'arrête ici
+                break
+                ;;
+        esac
+    done
 }
 
 ###############################################################################
@@ -325,6 +386,7 @@ function load_config() {
     if [ -f "$env_file" ]; then
         # Activer l'export automatique des variables lues
         set -a
+        # shellcheck disable=SC1090
         source "$env_file"
         set +a
         log_action "INFO" "Fichier de configuration chargé : $env_file"
@@ -530,23 +592,274 @@ function create_commit() {
         echo_color "$YELLOW" "Entrez la description du commit :"
         read -r commit_description
         COMMIT_MSG="$type_choice: $commit_description"
+        # shellcheck disable=SC2030
+        # shellcheck disable=SC2015
         improved_validate_commit_message && break || (echo_color "$RED" "Invalide. Réessayer."; COMMIT_MSG="")
     done
 
     run_tests
 
     if [ "$DRY_RUN" == "y" ]; then
+        # shellcheck disable=SC2031
         echo_color "$GREEN" "Simulation : git commit -m '$COMMIT_MSG'"
+        # shellcheck disable=SC2031
         log_action "INFO" "Simul commit : $COMMIT_MSG"
     else
         if [ "$GPG_SIGN" == "y" ]; then
+            # shellcheck disable=SC2031
             git commit -m "$COMMIT_MSG" -S
         else
+            # shellcheck disable=SC2031
             git commit -m "$COMMIT_MSG"
         fi
+        # shellcheck disable=SC2031
         log_action "INFO" "Commit créé : $COMMIT_MSG"
     fi
 }
+
+###############################################################################
+# FONCTIONS AVANCÉES (ROLLBACK, CHERRY-PICK, REVIEW, ETC.)
+###############################################################################
+
+# Pour la sécurité, on peut demander à l’utilisateur s’il veut faire un revert
+# (qui crée un commit inverse) ou un reset (qui efface l’historique local).
+function rollback_commits() {
+    if [ -z "$ROLLBACK_COMMITS" ]; then
+        return
+    fi
+
+    echo_color "$RED" "Vous avez demandé un rollback des $ROLLBACK_COMMITS derniers commits."
+    if [ "$CI_FRIENDLY" == "y" ]; then
+        # En mode CI, on part direct sur un revert ou reset
+        echo_color "$YELLOW" "[CI] On effectue un revert des $ROLLBACK_COMMITS commits."
+        if [ "$DRY_RUN" == "y" ]; then
+            echo_color "$GREEN" "Simulation : git revert HEAD~$((ROLLBACK_COMMITS-1))..HEAD"
+        else
+            git revert --no-edit HEAD~$((ROLLBACK_COMMITS-1))..HEAD
+        fi
+        return
+    fi
+
+    echo_color "$YELLOW" "Voulez-vous faire un revert (commit inverse) ou un reset (efface l'historique) ?"
+    echo "1) revert"
+    echo "2) reset --hard"
+    read -rp "> " ROLLBACK_CHOICE
+    case "$ROLLBACK_CHOICE" in
+        1)
+            if [ "$DRY_RUN" == "y" ]; then
+                echo_color "$GREEN" "Simulation : git revert HEAD~$((ROLLBACK_COMMITS-1))..HEAD"
+            else
+                git revert --no-edit HEAD~$((ROLLBACK_COMMITS-1))..HEAD
+            fi
+            ;;
+        2)
+            if [ "$DRY_RUN" == "y" ]; then
+                echo_color "$GREEN" "Simulation : git reset --hard HEAD~$ROLLBACK_COMMITS"
+            else
+                git reset --hard HEAD~"$ROLLBACK_COMMITS"
+            fi
+            ;;
+        *)
+            echo_color "$RED" "Annulé."
+            ;;
+    esac
+}
+
+# On affiche la liste des commits d’une autre branche, et on propose de cherry-pick le commit voulu
+function cherry_pick_interactive() {
+    if [ "$DO_CHERRY_PICK" != "y" ]; then
+        return
+    fi
+
+    echo_color "$BLUE" "Cherry-pick interactif :"
+    echo_color "$YELLOW" "Entrez le nom de la branche dont vous voulez cherry-pick un commit :"
+    read -r SOURCE_BRANCH
+
+    # Récupérer un log succinct
+    echo_color "$BLUE" "Commits disponibles dans '$SOURCE_BRANCH' (derniers 10) :"
+    git fetch origin "$SOURCE_BRANCH"
+    git log --oneline "origin/$SOURCE_BRANCH" -n 10
+
+    echo_color "$YELLOW" "Entrez le hash du commit à cherry-pick (7 premiers caractères suffisent) :"
+    read -r COMMIT_HASH
+
+    if [ "$DRY_RUN" == "y" ]; then
+        echo_color "$GREEN" "Simulation : git cherry-pick $COMMIT_HASH"
+    else
+        git cherry-pick "$COMMIT_HASH" || {
+            echo_color "$RED" "Conflit lors du cherry-pick ?"
+            check_for_conflicts
+        }
+    fi
+}
+
+# Review (diff) avant push
+function review_changes() {
+    if [ "$DO_REVIEW_DIFF" != "y" ]; then
+        return
+    fi
+
+    echo_color "$BLUE" "=== REVIEW DIFF AVANT PUSH ==="
+    # Résumé
+    git diff --stat
+
+    if [ "$CI_FRIENDLY" == "y" ]; then
+        # Pas de question en CI
+        return
+    fi
+
+    echo_color "$YELLOW" "Afficher le diff complet ? (y/n)"
+    read -r SHOW_DIFF
+    if [ "$SHOW_DIFF" == "y" ]; then
+        git diff --color | less -R
+    fi
+
+    echo_color "$YELLOW" "Ouvrir un outil graphique (meld/kdiff3) ? (y/n)"
+    read -r GRAPHICAL
+    if [ "$GRAPHICAL" == "y" ]; then
+        if command -v meld &>/dev/null; then
+            meld .
+        else
+            echo_color "$RED" "meld non installé, annulation."
+        fi
+    fi
+}
+
+# Créer une PR via l’API après le push. On peut utiliser gh cli (GitHub CLI) ou un curl.
+function create_github_pr() {
+    if [ "$CREATE_PR" != "y" ]; then
+        return
+    fi
+    if [ "$PLATFORM" != "github" ]; then
+        echo_color "$RED" "PLATFORM != github, impossible de créer PR."
+        return
+    fi
+
+    echo_color "$BLUE" "=== Création Pull Request GitHub ==="
+    local base_branch="main"  # ou la branch par défaut
+    if [ -n "$MAIN_BRANCH" ]; then
+        base_branch="$MAIN_BRANCH"
+    fi
+
+    if ! command -v gh &>/dev/null; then
+        echo_color "$RED" "L'outil GitHub CLI (gh) n'est pas installé."
+        return
+    fi
+
+    if [ "$DRY_RUN" == "y" ]; then
+        echo_color "$GREEN" "Simulation : gh pr create --base $base_branch --head $BRANCH_NAME --title 'PR depuis script' --body 'Auto-created PR'"
+    else
+        gh pr create --base "$base_branch" --head "$BRANCH_NAME" --title "PR depuis script" --body "Auto-created PR via git_push_automation.sh"
+    fi
+}
+
+# Créer une Merge Request sur GitLab
+function create_gitlab_mr() {
+    if [ "$CREATE_MR" != "y" ]; then
+        return
+    fi
+    if [ "$PLATFORM" != "gitlab" ]; then
+        echo_color "$RED" "PLATFORM != gitlab, impossible de créer MR."
+        return
+    fi
+
+    echo_color "$BLUE" "=== Création Merge Request GitLab ==="
+    if [ -z "$GITLAB_PROJECT_ID" ] || [ -z "$GITLAB_TOKEN" ]; then
+        echo_color "$RED" "GITLAB_PROJECT_ID ou GITLAB_TOKEN manquant"
+        return
+    fi
+
+    # On suppose qu'on veut merger la branche $BRANCH_NAME dans 'main'
+    local base_branch="main"
+    local mr_title="MR depuis script"
+    local mr_description="Auto-created Merge Request via git_push_automation.sh"
+
+    local payload
+    payload=$(jq -n \
+        --arg src "$BRANCH_NAME" \
+        --arg tgt "$base_branch" \
+        --arg title "$mr_title" \
+        --arg desc "$mr_description" \
+        '{
+            "source_branch": $src,
+            "target_branch": $tgt,
+            "title": $title,
+            "description": $desc,
+            "remove_source_branch": false
+        }'
+    )
+
+    if [ "$DRY_RUN" == "y" ]; then
+        echo_color "$GREEN" "Simulation : curl POST MR"
+        echo "$payload"
+    else
+        response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+            --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/merge_requests")
+
+        http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+        # shellcheck disable=SC2001
+        body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
+        if [ "$http_status" -ne 201 ]; then
+            echo_color "$RED" "Erreur création MR GitLab (HTTP $http_status)"
+            echo_color "$RED" "Réponse : $body"
+        else
+            echo_color "$GREEN" "Merge Request créée sur GitLab."
+        fi
+    fi
+}
+
+# Versioning sémantique (bumping major/minor/patch)
+# On peut lire le dernier tag vX.Y.Z, incrémenter, et créer un nouveau tag.
+function auto_semver_bump() {
+    if [ -z "$AUTO_VERSION_BUMP" ]; then
+        return
+    fi
+    echo_color "$BLUE" "=== Incrémentation sémantique : $AUTO_VERSION_BUMP ==="
+
+    # Récupérer le dernier tag
+    local last_tag
+    last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+    # suppose format vMAJOR.MINOR.PATCH
+    local version="${last_tag#v}"  # remove leading 'v' si existant
+    local major="${version%%.*}"
+    local rest="${version#*.}"
+    local minor="${rest%%.*}"
+    local patch="${rest#*.}"
+
+    case "$AUTO_VERSION_BUMP" in
+        major)
+            major=$((major+1))
+            minor=0
+            patch=0
+            ;;
+        minor)
+            minor=$((minor+1))
+            patch=0
+            ;;
+        patch)
+            patch=$((patch+1))
+            ;;
+        *)
+            echo_color "$RED" "Type de bump inconnu: $AUTO_VERSION_BUMP"
+            return
+            ;;
+    esac
+    local new_tag="v${major}.${minor}.${patch}"
+
+    if [ "$DRY_RUN" == "y" ]; then
+        echo_color "$GREEN" "Simulation : git tag -a $new_tag -m 'Auto semver bump' && git push origin $new_tag"
+    else
+        git tag -a "$new_tag" -m "Auto semver bump"
+        git push origin "$new_tag"
+        echo_color "$GREEN" "Nouveau tag sémantique créé : $new_tag"
+        # Optionnel : vous pourriez lancer create_release $new_tag "Nouvelle version"
+    fi
+}
+
+
 
 ###############################################################################
 # GESTION DES BRANCHES, PULL, MERGE, REBASE, PUSH
@@ -784,6 +1097,7 @@ function perform_push() {
     while true; do
         echo ""
         echo -n "Pousser sur '$BRANCH_NAME' ? (y/n) "
+        # shellcheck disable=SC2162
         read CONFIRM_PUSH
         case "$CONFIRM_PUSH" in
             y|Y) break ;;
@@ -852,6 +1166,7 @@ function perform_push() {
     # AJOUT: Création d'une Release GitLab si un tag est présent et si GITLAB_PROJECT_ID et GITLAB_TOKEN sont disponibles
     if [ -n "$TAG_NAME" ] && [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ] && [ "$DRY_RUN" != "y" ]; then
         local gitlab_api_url="https://gitlab.com/api/v4"
+        # shellcheck disable=SC2155
         local release_name="Release $(date '+%Y-%m-%d %H:%M:%S')"
         local release_description="Cette release correspond au tag \`$TAG_NAME\` :
 - Projet : $project_name
@@ -867,6 +1182,7 @@ function perform_push() {
             "$gitlab_api_url/projects/$GITLAB_PROJECT_ID/releases")
 
         http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+        # shellcheck disable=SC2001
         body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
         if [ "$http_status" -eq 201 ]; then
@@ -901,8 +1217,8 @@ function perform_push() {
 ###############################################################################
 # PLATFORM-AGNOSTIC ABSTRACTION
 # VARIABLE PLATFORM DOIT ÊTRE DÉFINIE DANS LE FICHIER DE CONFIGURATION
-# (ex: export PLATFORM="github" ou "gitlab" ou "bitbucket" etc.)
-# SELON PLATFORM, ON APPELLE LES FONCTIONS SPÉCIFIQUES 
+# (ex: export PLATFORM="gitlab" ou "bitbucket" etc.)
+# SELON PLATFORM, ON APPELLE LES FONCTIONS SPÉCIFIQUES
 ###############################################################################
 
 function notify_platform_after_push() {
@@ -910,6 +1226,7 @@ function notify_platform_after_push() {
     local project_name="$2"
     local commit_url="$3"
 
+    # shellcheck disable=SC2155
     local message="**Nouveau push effectué !**
 - **Projet :** $project_name
 - **Branche :** $BRANCH_NAME
@@ -932,11 +1249,6 @@ function notify_platform_after_push() {
             [ -z "$GITLAB_TOKEN" ] && { log_action "WARN" "GITLAB_TOKEN manquant pour GitLab."; return; }
             [ -z "$GITLAB_PROJECT_ID" ] && { log_action "WARN" "GITLAB_PROJECT_ID manquant."; return; }
             notify_gitlab "$message" "$commit_hash"
-            ;;
-        github)
-            [ -z "$GITHUB_TOKEN" ] && { log_action "WARN" "GITHUB_TOKEN manquant pour GitHub."; return; }
-            [ -z "$GITHUB_REPO" ] && { log_action "WARN" "GITHUB_REPO manquant."; return; }
-            notify_github "$message" "$commit_hash"
             ;;
         bitbucket)
             [ -z "$BITBUCKET_USER" ] && { log_action "WARN" "BITBUCKET_USER manquant pour Bitbucket."; return; }
@@ -969,11 +1281,6 @@ function create_release() {
             [ -z "$GITLAB_PROJECT_ID" ] && { log_action "WARN" "Pas de GITLAB_PROJECT_ID."; return; }
             create_gitlab_release "$tag_name" "$description"
             ;;
-        github)
-            [ -z "$GITHUB_TOKEN" ] && { log_action "WARN" "Pas de GITHUB_TOKEN."; return; }
-            [ -z "$GITHUB_REPO" ] && { log_action "WARN" "Pas de GITHUB_REPO."; return; }
-            create_github_release "$tag_name" "$description"
-            ;;
         bitbucket)
             [ -z "$BITBUCKET_USER" ] && { log_action "WARN" "Pas de BITBUCKET_USER."; return; }
             [ -z "$BITBUCKET_APP_PASSWORD" ] && { log_action "WARN" "Pas de BITBUCKET_APP_PASSWORD."; return; }
@@ -1003,6 +1310,7 @@ function notify_gitlab() {
         "$gitlab_api_url/projects/$GITLAB_PROJECT_ID/repository/commits/$commit_hash/comments")
 
     http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    # shellcheck disable=SC2001
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -ne 201 ]; then
@@ -1019,6 +1327,7 @@ function create_gitlab_release() {
     local tag_name="$1"
     local description="$2"
     local gitlab_api_url="https://gitlab.com/api/v4"
+    # shellcheck disable=SC2155
     local release_name="Release $(date '+%Y-%m-%d %H:%M:%S')"
 
     response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
@@ -1029,6 +1338,7 @@ function create_gitlab_release() {
         "$gitlab_api_url/projects/$GITLAB_PROJECT_ID/releases")
 
     http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    # shellcheck disable=SC2001
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
@@ -1038,67 +1348,6 @@ function create_gitlab_release() {
         echo_color "$RED" "Erreur release GitLab:$http_status"
         echo_color "$RED" "Réponse: $body"
         log_action "ERROR" "GitLab release fail $http_status $body"
-    fi
-}
-
-# NOTIFICATION GITHUB : FONCTIONNALITÉS POUR UNE PROCHAINE VERSION
-# function notify_github() {
-    local message="$1"
-    local commit_hash="$2"
-    local github_api_url="https://api.github.com"
-    
-    # Encodage du message pour éviter les problèmes de caractères spéciaux
-    local encoded_message
-    encoded_message=$(echo "$message" | jq -Rs '.')  # -R (raw), -s (slurp)
-
-    # Appel à l’API GitHub pour ajouter un commentaire sur le commit
-    # (on suppose que GITHUB_TOKEN et GITHUB_REPO sont déjà définis)
-    response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-        --request POST \
-        --header "Authorization: token $GITHUB_TOKEN" \
-        --header "Accept: application/vnd.github+json" \
-        --header "Content-Type: application/json" \
-        --data "{\"body\": $encoded_message}" \
-        "$github_api_url/repos/$GITHUB_REPO/commits/$commit_hash/comments")
-
-    # Récupération du code HTTP et du corps de la réponse
-    http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-    body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
-
-    # Vérification du statut
-    if [ "$http_status" -ne 201 ]; then
-        echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
-        echo_color "$RED" "Réponse: $body"
-        log_action "ERROR" "GitHub notif fail $http_status $body"
-    else
-        echo_color "$GREEN" "Notif GitHub OK."
-        log_action "INFO" "Notif GitHub OK"
-    fi
-}
-
-function create_github_release() {
-    local tag_name="$1"
-    local description="$2"
-    local release_name="$tag_name"
-
-    # https://docs.github.com/en/rest/releases/releases#create-a-release
-    response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-        -X POST \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        -H "Content-Type: application/json" \
-        --data "{\"tag_name\":\"$tag_name\",\"name\":\"$release_name\",\"body\":\"$description\"}" \
-        "https://api.github.com/repos/$GITHUB_REPO/releases")
-
-    http_status=$(echo "$response" | tr -d '\n' | sed 's/.*HTTPSTATUS://')
-    body=$(echo "$response" | sed 's/HTTPSTATUS\:.*//g')
-
-    if [ "$http_status" -eq 201 ]; then
-        echo_color "$GREEN" "Release GitHub créée."
-        log_action "INFO" "Release GitHub OK"
-    else
-        echo_color "$RED" "Erreur release GitHub:$http_status"
-        echo_color "$RED" "Réponse: $body"
-        log_action "ERROR" "GitHub release fail $http_status $body"
     fi
 }
 
@@ -1131,6 +1380,7 @@ function notify_bitbucket() {
         "$bitbucket_api_url")
 
     http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    # shellcheck disable=SC2001
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
@@ -1167,13 +1417,13 @@ function create_bitbucket_release() {
     # Endpoint pour créer un tag sur Bitbucket Cloud:
     # POST /2.0/repositories/{workspace}/{repo_slug}/refs/tags
     # Exemple de payload :
-    {
-      "name": "v1.0.0",
-       "target": {
-           "hash": "commit_hash"
-       },
-       "message": "Description de la release"
-    }
+    # {
+    #  "name": "v1.0.0",
+    #   "target": {
+    #       "hash": "commit_hash"
+    #   },
+    #   "message": "Description de la release"
+    # }
 
     local bitbucket_api_url="https://api.bitbucket.org/2.0/repositories/$BITBUCKET_WORKSPACE/$BITBUCKET_REPO_SLUG/refs/tags"
 
@@ -1185,6 +1435,7 @@ function create_bitbucket_release() {
         "$bitbucket_api_url")
 
     http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    # shellcheck disable=SC2001
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
@@ -1271,6 +1522,7 @@ function send_email_via_sendgrid() {
     --data "$payload")
 
   http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  # shellcheck disable=SC2001
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
@@ -1306,6 +1558,7 @@ function send_email_via_mailgun() {
     -F text="$content")
 
   http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  # shellcheck disable=SC2001
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
@@ -1355,6 +1608,7 @@ function send_email_via_mailjet() {
     --data "$payload")
 
   http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+  # shellcheck disable=SC2001
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
@@ -1422,6 +1676,7 @@ function send_notification() {
             --arg email_user "$safe_email_user" \
             --arg commit_url "$commit_url" \
             --arg text "$common_message" \
+            --arg ticket_url "$TICKET_URL" \
             '{
                 "channel": $channel,
                 "username": $username,
@@ -1451,7 +1706,13 @@ function send_notification() {
                                 "type": "mrkdwn",
                                 "text": "*Auteur :*\n\($email_user)"
                             }
-                        ]
+                            # On peut ajouter un champ Ticket si $ticket_url != ""
+                        ] | if $ticket_url == "" then . else . + [
+                              {
+                                "type": "mrkdwn",
+                                "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
+                              }
+                            ] end
                     },
                     {
                         "type": "divider"
@@ -1466,15 +1727,21 @@ function send_notification() {
                 ]
             }')
 
+
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : Notification Slack."
             echo "$slack_payload"
             log_action "INFO" "Simulation notif Slack."
         else
-            response=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'Content-type: application/json' --data "$slack_payload" "$SLACK_WEBHOOK_URL")
+            response=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST \
+                -H 'Content-type: application/json' \
+                --data "$slack_payload" \
+                "$SLACK_WEBHOOK_URL")
+
             if [ "$response" != "200" ]; then
-                echo_color "$RED" "Erreur notif Slack (HTTP $response)."
-                log_action "ERROR" "Slack notif fail HTTP $response"
+                echo_color "$RED" "Erreur notify Slack (HTTP $response)."
+                log_action "ERROR" "Slack notif échouée HTTP $response"
             else
                 echo_color "$GREEN" "Notification Slack envoyée."
                 log_action "INFO" "Notif Slack OK."
@@ -1483,79 +1750,6 @@ function send_notification() {
     else
         log_action "INFO" "SLACK_WEBHOOK_URL non défini, pas de notif Slack."
     fi
-
-    #### Notification GitHub ####
-    # if [ -n "$GITHUB_TOKEN" ]; then
-    #
-    # Récupération du message commun
-    #    local github_message="$common_message"
-    #
-    # Récupération du dernier commit
-    #    local commit_hash
-    #    commit_hash=$(git rev-parse HEAD)  # ou utilisez la variable existante si vous le souhaitez
-    #
-    #    # Construction de l'URL d'API GitHub
-    #    local github_api_url="https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments"
-    #
-    #    # Envoi du commentaire au dépôt GitHub
-    #   
-    #    if [ "$DRY_RUN" == "y" ]; then
-    #        echo_color "$GREEN" "[DRY_RUN] Simulation : Notification GitHub."
-    #        echo "POST $github_api_url"
-    #        echo "Data (message) : $github_message"
-    #    else
-    #        # === DEBUG LOGS ===
-    #        echo_color "$BLUE" "=== DEBUG NOTIF GITHUB (send_notification) ==="
-    #        echo_color "$BLUE" "GITHUB_TOKEN (masqué) => ${GITHUB_TOKEN:0:6}..."
-    #        echo_color "$BLUE" "GITHUB_REPO => $GITHUB_REPO"
-    #       echo_color "$BLUE" "Commit Hash => $commit_hash"
-    #
-    #        echo_color "$BLUE" "Message brut (caractères spéciaux visibles) =>"
-    #        # Affiche les caractères cachés (\n, \r, etc.)
-    #        echo "$github_message" | sed -n 'l'
-    #
-    #        # Vérifier si jq est installé
-    #        if ! command -v jq &>/dev/null; then
-    #            echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
-    #            log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
-    #            return
-    #        fi
-    #        # ===================
-    #
-    # On échappe correctement le message via jq (lecture en mode 'raw' puis conversion JSON)
-    #        local encoded_github_message
-    #        encoded_github_message=$(echo "$github_message" | jq -Rs '.')
-    #
-    #        # Log du JSON final
-    #        echo_color "$BLUE" "encoded_github_message => $encoded_github_message"
-    #        echo_color "$BLUE" "JSON final => {\"body\": $encoded_github_message}"
-    #       echo_color "$BLUE" "========================================"
-    #
-    # On l'utilise ensuite dans le champ "body"
-    #        response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
-    #            --request POST \
-    #            --header "Authorization: token $GITHUB_TOKEN" \
-    #            --header "Content-Type: application/json" \
-    #            --data "{\"body\": $encoded_github_message}" \
-    #            "$github_api_url")
-    #
-    # On récupère le code HTTP et le body
-    #        http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-    #        body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
-    #
-    #        # Analyse du statut
-    #        if [ "$http_status" -ne 201 ]; then
-    #            echo_color "$RED" "Erreur notif GitHub HTTP:$http_status"
-    #            echo_color "$RED" "Réponse : $body"
-    #            log_action "ERROR" "GitHub notif fail $http_status $body"
-    #        else
-    #            echo_color "$GREEN" "Notification GitHub OK."
-    #            log_action "INFO" "Notif GitHub OK."
-    #        fi
-    #    fi
-    # else
-    #    log_action "INFO" "GITHUB_TOKEN non défini, pas de notif GitHub."
-    # fi
 
     #### Notification GitLab ####
     if [ -n "$GITLAB_PROJECT_ID" ] && [ -n "$GITLAB_TOKEN" ]; then
@@ -1569,13 +1763,15 @@ function send_notification() {
             echo "POST $gitlab_api_url/projects/$GITLAB_PROJECT_ID/repository/commits/$commit_hash/comments"
             echo "Data: $gitlab_message"
         else
-            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" --request POST \
+            response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
+                --request POST \
                 --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
                 --header "Content-Type: application/json" \
                 --data "{\"note\": $encoded_message}" \
                 "$gitlab_api_url/projects/$GITLAB_PROJECT_ID/repository/commits/$commit_hash/comments")
 
             http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+            # shellcheck disable=SC2001
             body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
             if [ "$http_status" -ne 201 ]; then
@@ -1594,6 +1790,7 @@ function send_notification() {
     #### Notification Email ####
     if [ -n "$EMAIL_RECIPIENTS" ]; then
         check_mailer
+        # shellcheck disable=SC2181
         if [ $? -ne 0 ]; then
             echo_color "$YELLOW" "Pas de mailer, pas d'e-mail."
             log_action "WARN" "No mailer"
@@ -1612,37 +1809,38 @@ Voir le commit : $commit_url
 Cordialement,
 Votre script Git"
 
-           if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : Envoi e-mail via $EMAIL_PROVIDER à $EMAIL_RECIPIENTS"
-            echo_color "$GREEN" "Sujet : $subject"
-            echo "$email_body"
-        else
-            if [ -z "$EMAIL_PROVIDER" ]; then
-                echo_color "$RED" "Erreur : Pas de EMAIL_PROVIDER défini (sendgrid, mailgun, mailjet...)."
-                log_action "ERROR" "Aucun EMAIL_PROVIDER défini."
+            if [ "$DRY_RUN" == "y" ]; then
+                echo_color "$GREEN" "Simulation : Envoi e-mail via $EMAIL_PROVIDER à $EMAIL_RECIPIENTS"
+                echo_color "$GREEN" "Sujet : $subject"
+                echo "$email_body"
             else
-                # Selon la valeur de $EMAIL_PROVIDER, on appelle la bonne fonction
-                case "$EMAIL_PROVIDER" in
-                  "sendgrid")
-                    send_email_via_sendgrid "$EMAIL_RECIPIENTS" "$subject" "$email_body"
-                    ;;
-                  "mailgun")
-                    send_email_via_mailgun "$EMAIL_RECIPIENTS" "$subject" "$email_body"
-                    ;;
-                  "mailjet")
-                    send_email_via_mailjet "$EMAIL_RECIPIENTS" "$subject" "$email_body"
-                    ;;
-                  *)
-                    echo_color "$RED" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
-                    log_action "ERROR" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
-                    ;;
-                esac
+                if [ -z "$EMAIL_PROVIDER" ]; then
+                    echo_color "$RED" "Erreur : Pas de EMAIL_PROVIDER défini (sendgrid, mailgun, mailjet...)."
+                    log_action "ERROR" "Aucun EMAIL_PROVIDER défini."
+                else
+                    # Selon la valeur de $EMAIL_PROVIDER, on appelle la bonne fonction
+                    case "$EMAIL_PROVIDER" in
+                        "sendgrid")
+                            send_email_via_sendgrid "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                            ;;
+                        "mailgun")
+                            send_email_via_mailgun "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                            ;;
+                        "mailjet")
+                            send_email_via_mailjet "$EMAIL_RECIPIENTS" "$subject" "$email_body"
+                            ;;
+                        *)
+                            echo_color "$RED" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
+                            log_action "ERROR" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
+                            ;;
+                    esac
+                fi
             fi
         fi
     else
         log_action "INFO" "EMAIL_RECIPIENTS non défini, pas d'e-mail."
     fi
-    
+
     #### Notification Mattermost ####
     if [ -n "$MATTERMOST_WEBHOOK_URL" ]; then
         local mm_message="**Nouveau push** sur *$BRANCH_NAME* par $email_user.
@@ -1652,7 +1850,9 @@ Commit: \`$commit_hash\`.
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : Notification Mattermost."
         else
-            curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"$mm_message\"}" "$MATTERMOST_WEBHOOK_URL" || {
+            curl -X POST -H 'Content-type: application/json' \
+                 --data "{\"text\":\"$mm_message\"}" \
+                 "$MATTERMOST_WEBHOOK_URL" || {
                 echo_color "$RED" "Erreur notif Mattermost."
                 log_action "ERROR" "Mattermost fail."
             }
@@ -1667,6 +1867,7 @@ Commit: \`$commit_hash\`.
 }
 
 function send_custom_webhook() {
+    # shellcheck disable=SC2155
     local email="$(git config --get user.email)"
 
     #### 1) Webhook Slack ####
@@ -1737,8 +1938,9 @@ function send_custom_webhook() {
                  "https://api.github.com/repos/$GITHUB_REPO/commits/$commit_hash/comments")
 
              http_status=$(echo "$response" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+             # shellcheck disable=SC2001
              body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
-     
+
             if [ "$http_status" -ne 201 ]; then
                  echo_color "$RED" "Erreur custom webhook GitHub HTTP:$http_status"
                  echo_color "$RED" "Réponse: $body"
@@ -1753,6 +1955,7 @@ function send_custom_webhook() {
 
 function generate_report() {
     # AJOUT: Générer un rapport HTML local plus professionnel
+    # shellcheck disable=SC2155
     local report_file="./reports/report_$(date '+%Y%m%d_%H%M%S').html"
 
     # Créer le répertoire parent du fichier de rapport
@@ -1815,6 +2018,7 @@ function generate_report() {
     # Récupération des fichiers modifiés lors du dernier commit
     local changed_files_html=""
     while IFS=$'\t' read -r status filename; do
+        # shellcheck disable=SC2015
         [ -n "$status" ] && [ -n "$filename" ] || continue
         changed_files_html+="<tr><td>${status}</td><td>${filename}</td></tr>"
     done < <(git show --pretty="" --name-status HEAD)
@@ -2186,12 +2390,14 @@ function generate_commit_stats() {
 
     # Top 3 des auteurs sur les 30 derniers commits
     echo "## Statistiques de commits" > "$stats_file"
+    # shellcheck disable=SC2129
     echo "### Top Auteurs (30 derniers commits):" >> "$stats_file"
     git shortlog -n -s -e -30 | head -n 3 >> "$stats_file"
 
     # Compter le nombre de commits par type (Tâche, Bug, etc.)
     echo "### Nombre de commits par type (30 derniers):" >> "$stats_file"
     for t in "Tâche" "Bug" "Amélioration" "Refactor"; do
+        # shellcheck disable=SC2126
         count=$(git log -30 --pretty=%s | grep "^$t:" | wc -l)
         echo "- $t : $count" >> "$stats_file"
     done
@@ -2200,24 +2406,32 @@ function generate_commit_stats() {
     echo_color "$GREEN" "Statistiques de commits générées dans $stats_file"
 }
 
-
 ##############################################################################
 # 4. Intégration avec un Système de Tickets
 # On suppose que le message de commit peut contenir un ID de ticket (ex: JIRA-123)
 # on va l’extraire et ajouter un lien dans Slack et dans le rapport.
 ###############################################################################
 function link_tickets() {
-    # Hypothèse : Le message de commit est dans COMMIT_MSG
+    # Hypothèse : le message de commit est dans COMMIT_MSG
+    # shellcheck disable=SC2031
     if [[ $COMMIT_MSG =~ ([A-Z]+-[0-9]+) ]]; then
         local ticket_id="${BASH_REMATCH[1]}"
-        # Supposons un lien vers JIRA
-        local ticket_url="https://jira.example.com/browse/$ticket_id"
-        log_action "INFO" "Ticket détecté : $ticket_id"
 
-        # Enregistrer ce ticket pour utilisation dans Slack ou rapport
-        TICKET_URL="$ticket_url"
+        # Si TICKET_BASE_URL n'est pas défini, on ne peut pas construire d'URL
+        if [ -z "$TICKET_BASE_URL" ]; then
+            echo_color "$YELLOW" "Aucun TICKET_BASE_URL n'est défini dans .env, impossible de construire le lien vers le ticket."
+            log_action "WARN" "TICKET_BASE_URL manquant: l'ID $ticket_id ne sera pas lié."
+        else
+            # Concatène l'URL de base avec l'ID du ticket
+            local ticket_url="${TICKET_BASE_URL}${ticket_id}"
+            log_action "INFO" "Ticket détecté : $ticket_id"
+
+            # On enregistre ce ticket pour utilisation ultérieure (Slack, e-mail, etc.)
+            TICKET_URL="$ticket_url"
+        fi
     fi
 }
+
 
 ###############################################################################
 # 5. Vérifications de Qualité (Linting, Sécurité)
@@ -2253,6 +2467,7 @@ function run_quality_checks() {
             echo_color "$GREEN" "Simulation: npm audit"
         else
             npm audit --audit-level=moderate
+            # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
                 echo_color "$RED" "Audit sécurité échoué (npm audit). Annulation."
                 log_action "ERROR" "Audit sécurité fail."
@@ -2269,6 +2484,7 @@ function run_quality_checks() {
             echo_color "$GREEN" "Simulation : git-secrets --scan"
         else
             git-secrets --scan
+            # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
                 echo_color "$RED" "git-secrets a détecté des secrets ! Annulation."
                 log_action "ERROR" "Secrets détectés."
@@ -2288,6 +2504,7 @@ function run_quality_checks() {
             echo_color "$GREEN" "Simulation : bandit -r ."
         else
             bandit -r .
+            # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
                 echo_color "$RED" "Analyse bandit échouée (problèmes de sécurité Python). Annulation."
                 log_action "ERROR" "Bandit fail."
@@ -2334,7 +2551,7 @@ function export_patches() {
     if [ "$DRY_RUN" == "y" ]; then
         echo_color "$GREEN" "Simulation : git format-patch -$count HEAD -o ./patches"
     else
-        git format-patch -$count HEAD -o ./patches
+        git format-patch -"$count" HEAD -o ./patches
         echo_color "$GREEN" "Patches créés dans ./patches."
     fi
     log_action "INFO" "$count patches exportés dans ./patches."
@@ -2381,6 +2598,7 @@ function log_release() {
 function cleanup_branches() {
     echo_color "$YELLOW" "Nettoyage des branches locales fusionnées..."
     local main_branch="main"
+    # shellcheck disable=SC2162
     git branch | grep -v "$main_branch" | while read b; do
         # Vérifier si fusionnée
         git branch --merged $main_branch | grep -q " $b$" && {
@@ -2439,51 +2657,58 @@ function main_without_repo_dir() {
     check_git_repo || exit 1
     check_user_email || exit 1
 
+    # 1) Si l’utilisateur a demandé un rollback (option -X n)
+    rollback_commits
+
     if [ "$DRY_RUN" == "y" ]; then
         echo_color "$YELLOW" "Simulation activée."
     fi
 
-    # Appeler manage_hooks si MANAGE_HOOKS == "y"
+    # 2) Gérer les hooks si besoin
     if [ "$MANAGE_HOOKS" == "y" ]; then
         manage_hooks
     fi
 
-    # Appeler handle_submodules si MANAGE_SUBMODULES == "y"
+    # 3) Gérer les sous-modules si besoin
     if [ "$MANAGE_SUBMODULES" == "y" ]; then
         handle_submodules
     fi
 
-    # Appeler generate_commit_stats si GENERATE_COMMIT_STATS == "y"
+    # 4) Générer stats de commits
     if [ "$GENERATE_COMMIT_STATS" == "y" ]; then
         generate_commit_stats
     fi
 
-    # Appeler link_tickets si LINK_TICKETS == "y"
+    # 5) Lier les tickets si demandé
     if [ "$LINK_TICKETS" == "y" ]; then
         link_tickets
     fi
 
-    # Appeler run_quality_checks si RUN_QUALITY_CHECKS == "y"
+    # 6) Vérifications qualité (lint, audit, etc.)
     if [ "$RUN_QUALITY_CHECKS" == "y" ]; then
         run_quality_checks
     fi
 
-    # Si COMPARE_BRANCH n'est pas vide, comparer
+    # 7) Comparer la branche si besoin
     if [ -n "$COMPARE_BRANCH" ]; then
         compare_branches
     fi
 
-    # Si EXPORT_PATCHES == "y", exporter
+    # 8) Exporter des patches si demandé
     if [ "$EXPORT_PATCHES" == "y" ]; then
         export_patches
     fi
 
-    # On ne déclenche CI et log release qu'après le push, donc ces fonctions seront appelées post-push
-    # On fera trigger_ci et log_release après perform_push dans ce cas (à adapter selon la logique voulue)
-    # Idem pour le nettoyage des branches: après la séquence par défaut, par exemple dans collect_feedback.
+    # 9) Cherry-pick interactif (option -Y) avant d'ajouter/committer/pousser
+    cherry_pick_interactive
 
+    # 10) Review/diff complet (option -Z) juste avant la séquence d'actions
+    review_changes
+
+    # 11) Lancer la séquence d'actions par défaut (backup, add_files, create_commit, push, etc.)
     default_actions_sequence
 }
+
 
 function main_menu() {
     local current_action=$1
