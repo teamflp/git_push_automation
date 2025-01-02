@@ -17,7 +17,7 @@
 #
 # Les développeurs peuvent utiliser ce script en ligne de commande avec différentes
 # options, ou en mode par défaut interactif.
-#
+# 
 # Fiabilité et robustesse :
 # - Gestion des erreurs avec messages explicites.
 # - Interaction limitée si DRY_RUN ou variables fixées.
@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="1.1.2"
+SCRIPT_VERSION="1.1.3"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
