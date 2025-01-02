@@ -1803,62 +1803,73 @@ function send_notification() {
             --arg commit_url "$commit_url" \
             --arg text "$common_message" \
             --arg ticket_url "$TICKET_URL" \
-            '{
+            '
+            {
                 "channel": $channel,
                 "username": $username,
                 "icon_emoji": $emoji,
                 "text": $text,
                 "blocks": [
-                    {
-                        "type": "header",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "🎉 Nouveau push effectué !",
-                            "emoji": true
-                        }
-                    },
-                    {
-                        "type": "section",
-                        "fields": (
-                            # On ouvre une parenthèse pour "encapsuler" l'expression JQ :
-                            [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
-                                },
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*Branche :*\n\($branch_name)"
-                                },
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*Auteur :*\n\($email_user)"
-                                }
-                                # Si on veut éventuellement d'autres champs ici, on les met
-                            ]
-                            # Et maintenant on “pipe” ce tableau dans le if/then/else :
-                            | if $ticket_url == "" then .
-                            else . + [
-                                {
-                                "type": "mrkdwn",
-                                "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
-                                }
-                            ]
-                            end
-                        )
-                    },
-                    {
-                        "type": "divider"
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "Consultez le commit : <\($commit_url)|Voir le commit>"
-                        }
+                {
+                    "type": "header",
+                    "text": {
+                    "type": "plain_text",
+                    "text": "🎉 Nouveau push effectué !",
+                    "emoji": true
                     }
+                },
+                {
+                    "type": "section",
+                    # On construit le tableau "fields" d’un coup :
+                    "fields": if $ticket_url == "" then
+                    [
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
+                        },
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Branche :*\n\($branch_name)"
+                        },
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Auteur :*\n\($email_user)"
+                        }
+                    ]
+                    else
+                    [
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
+                        },
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Branche :*\n\($branch_name)"
+                        },
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Auteur :*\n\($email_user)"
+                        },
+                        {
+                        "type": "mrkdwn",
+                        "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
+                        }
+                    ]
+                    end
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "text": {
+                    "type": "mrkdwn",
+                    "text": "Consultez le commit : <\($commit_url)|Voir le commit>"
+                    }
+                }
                 ]
-            }'
+            }
+            '
         )
 
         if [ "$DRY_RUN" == "y" ]; then
