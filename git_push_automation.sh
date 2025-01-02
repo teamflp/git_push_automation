@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="1.1.5"
+SCRIPT_VERSION="1.1.6"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
@@ -1793,7 +1793,7 @@ function send_notification() {
     #### Notification Slack ####
     if [ -n "$SLACK_WEBHOOK_URL" ]; then
         local slack_payload
-       slack_payload=$(jq -n \
+        slack_payload=$(jq -n \
             --arg channel "$SLACK_CHANNEL" \
             --arg username "$SLACK_USERNAME" \
             --arg emoji "$SLACK_ICON_EMOJI" \
@@ -1819,7 +1819,6 @@ function send_notification() {
                 },
                 {
                     "type": "section",
-                    # ⬇ La liste "fields" entre parenthèses ⬇
                     "fields": (
                     [
                         {
@@ -1835,7 +1834,6 @@ function send_notification() {
                         "text": "*Auteur :*\n\($email_user)"
                         }
                     ]
-                    # On applique la condition if ... then ... else ... end
                     | if $ticket_url == "" then
                         .
                         else
