@@ -86,8 +86,8 @@ function log_action() {
 }
 
 ###############################################################################
-# 3. FONCTIONS DE PARSING SÉMANTIQUE
-#    parse_semver() et compare_semver()
+# FONCTIONS DE PARSING SÉMANTIQUE
+# parse_semver() et compare_semver()
 ###############################################################################
 function parse_semver() {
     # Convertit "v1.2.10" => 1002010 pour comparer numériquement
@@ -129,8 +129,8 @@ function compare_semver() {
 }
 
 ###############################################################################
-# 4. FONCTION DE MISE À JOUR
-#    perform_script_update() télécharge le script et le remplace
+# FONCTION DE MISE À JOUR
+# perform_script_update() télécharge le script et le remplace
 ###############################################################################
 function perform_script_update() {
     echo_color "$BLUE" "Téléchargement de la dernière version du script..."
@@ -152,8 +152,8 @@ function perform_script_update() {
 }
 
 ###############################################################################
-# 5. FONCTION D'ORCHESTRATION
-#    check_for_script_update() récupère le tag distant, compare, propose la MAJ
+# FONCTION D'ORCHESTRATION
+# check_for_script_update() récupère le tag distant, compare, propose la MAJ
 ###############################################################################
 function check_for_script_update() {
     local repo_owner="teamflp"
