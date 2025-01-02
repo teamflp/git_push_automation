@@ -26,7 +26,7 @@
 ###############################################################################
 
 # Version du script
-SCRIPT_VERSION="1.1.3"
+SCRIPT_VERSION="1.1.4"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e
@@ -1819,26 +1819,33 @@ function send_notification() {
                     },
                     {
                         "type": "section",
-                        "fields": [
-                            {
-                                "type": "mrkdwn",
-                                "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
-                            },
-                            {
-                                "type": "mrkdwn",
-                                "text": "*Branche :*\n\($branch_name)"
-                            },
-                            {
-                                "type": "mrkdwn",
-                                "text": "*Auteur :*\n\($email_user)"
-                            }
-                            # On peut ajouter un champ Ticket si $ticket_url != ""
-                        ] | if $ticket_url == "" then . else . + [
-                              {
+                        "fields": (
+                            # On ouvre une parenthèse pour "encapsuler" l'expression JQ :
+                            [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Projet :*\n<\($commit_url)|\($project_name)>"
+                                },
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Branche :*\n\($branch_name)"
+                                },
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Auteur :*\n\($email_user)"
+                                }
+                                # Si on veut éventuellement d'autres champs ici, on les met
+                            ]
+                            # Et maintenant on “pipe” ce tableau dans le if/then/else :
+                            | if $ticket_url == "" then .
+                            else . + [
+                                {
                                 "type": "mrkdwn",
                                 "text": "*Ticket :*\n<\($ticket_url)|Ticket>"
-                              }
-                            ] end
+                                }
+                            ]
+                            end
+                        )
                     },
                     {
                         "type": "divider"
@@ -1851,8 +1858,8 @@ function send_notification() {
                         }
                     }
                 ]
-            }')
-
+            }'
+        )
 
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : Notification Slack."
