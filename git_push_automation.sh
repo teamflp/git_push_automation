@@ -988,8 +988,6 @@ function auto_semver_bump() {
     fi
 }
 
-
-
 ###############################################################################
 # GESTION DES BRANCHES, PULL, MERGE, REBASE, PUSH
 ###############################################################################
@@ -1660,7 +1658,6 @@ function send_email_via_sendgrid() {
     echo "Erreur envoi SendGrid (HTTP $http_status): $body"
   fi
 }
-
 
 # Envoie de notification via Mailgun
 # Cette fonction utilise l'API Mailgun pour envoyer un e-mail.
@@ -2560,7 +2557,6 @@ function link_tickets() {
         fi
     fi
 }
-
 
 ###############################################################################
 # 5. Vérifications de Qualité (Linting, Sécurité)
