@@ -2044,7 +2044,7 @@ function send_custom_webhook() {
             log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
             return
         fi
-        # ===================
+        # ============================@@@
 
         # On échappe correctement le message via jq
         local encoded_message
