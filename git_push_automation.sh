@@ -31,7 +31,7 @@ source "$(dirname "$0")/modules/notifications.sh"
 source "$(dirname "$0")/modules/submodules.sh"
 
 # Version du script
-SCRIPT_VERSION="1.1.6"
+SCRIPT_VERSION="1.1.7"
 
 # Arrêter le script en cas d'erreur et traiter les erreurs de pipeline
 set -e

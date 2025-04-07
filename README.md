@@ -1,7 +1,7 @@
 # Documentation complète du script Git Push Automation
 
 **Nom** : Git Push Automation\
-**Version** : 1.1.6\
+**Version** : 1.1.7\
 **Auteur** : Paterne G. G.\
 **Email** : [paterne81@hotmail.fr](mailto:paterne81@hotmail.fr)\
 **Pour** : Équipe DevOps / Dev
