@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ###############################################################################
-# GIT PUSH AUTOMATION - VERSION AVANCÉE
+# GIT PUSH AUTOMATION
 #
 # Ce script est conçu pour être utilisé par tous les développeurs d'une équipe.
 # Il intègre:
@@ -24,6 +24,11 @@
 # - Vérification de présence d'outils (git-secrets, bandit, npm, etc.) avant utilisation.
 #
 ###############################################################################
+
+# Charger les sous-modules
+source "$(dirname "$0")/modules/hooks.sh"
+source "$(dirname "$0")/modules/notifications.sh"
+source "$(dirname "$0")/modules/submodules.sh"
 
 # Version du script
 SCRIPT_VERSION="1.1.6"
@@ -1219,8 +1224,23 @@ function perform_rebase() {
     fi
 }
 
+
+# SECURE_PUSH : Scan des secrets dans le code source avant le push
+# Utilisation : git_push_automation.sh
+function secure_push() {
+    # Lancement d’un scan avant le push
+    if command -v git-secrets &>/dev/null; then
+        git-secrets --scan
+        if [ $? -ne 0 ]; then
+            echo_color "$RED" "Secrets détectés, push annulé."
+            exit 1
+        fi
+    fi
+}
+
 # PUSH : Pousser les modifications locales sur la branche distante
 function perform_push() {
+    secure_push
     while true; do
         echo ""
         echo -n "Pousser sur '$BRANCH_NAME' ? (y/n) "
@@ -2044,7 +2064,7 @@ function send_custom_webhook() {
             log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
             return
         fi
-        # ============================@@@
+        # ============================
 
         # On échappe correctement le message via jq
         local encoded_message

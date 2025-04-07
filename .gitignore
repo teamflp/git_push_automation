@@ -3,9 +3,15 @@
 /.env
 /.templates/
 /.env.git_push_automation
+/.env.git_push_automation.exemple
+/git_push_automation.exemple.yaml
+/git_push_automation.yaml
 /git_push_automation.log
 /backup/
 /reports/
 /patches/
 /stats/
 /Daily/
+/zpoubelle/
+/config.yaml
+/config.exemple.yaml

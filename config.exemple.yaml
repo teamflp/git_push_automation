@@ -1,0 +1,86 @@
+########################################################################################
+# CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT (Format YAML)
+########################################################################################
+
+# Paramétrage Slack
+slack:
+  webhook_url: "https://hooks.slack.com/services/T0XXXXXXXXX/xxxxxxxxxxxxxxxxxxxxxxxx"  # Exemple
+  channel: "#my-channel"
+  username: "MY_USERNAME"
+  icon_emoji: ":ghost:"
+
+# Paramétrage GitLab
+gitlab:
+  project_id: 12345678
+  token: "glpat-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  group_name: "mygroup"
+
+# Mode silencieux pour l'installation du mailer
+silent_install: 1
+
+# Paramétrage e-mail (avec différents providers possibles)
+email:
+  provider: "sendgrid"  # ou "mailgun", "mailjet", "aws_ses", "gmail"
+
+  # SENDGRID
+  sendgrid:
+    api_key: "SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    from: "smtp.sendgrid.net"
+
+  # MAILGUN
+  mailgun:
+    api_key: "key-xxxxxxxxxxxxxxxxxxxxxxxx"
+    domain: "votre-domaine.com"
+    from: "no-reply@votre-domaine.com"
+
+  # MAILJET
+  mailjet:
+    api_key: "xxxxxxxxxxxxxxxxxxxxxxxx"
+    secret_key: "xxxxxxxxxxxxxxxxxxxxxxxx"
+    from: "no-reply@votre-domaine.com"
+
+  # AWS SES
+  aws_ses:
+    access_key: "AKIAxxxxxxx"
+    secret_key: "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    region: "us-east-1"
+    from: "no-reply@votre-domaine.com"
+
+  # GMAIL SMTP
+  gmail:
+    host: "smtp.gmail.com"
+    port: "587"
+    user: "votreAdresse@gmail.com"
+    pass: "motDePasseOuAppPassword"
+    from: "votreAdresse@gmail.com"
+
+# Paramétrage des tests
+tests:
+  command: ""  # ex: "./run_tests.sh"
+
+# Paramétrage qualité/linting
+quality:
+  command: "npm run lint"  # ou la commande de lint souhaitée
+
+# Paramétrage CI/CD
+ci:
+  trigger_url: ""  # ex: "https://ci.example.com/trigger?token=XYZ"
+
+# Plateforme Git courante (gitlab, github, bitbucket)
+platforms:
+  current_platform: "github"
+
+  bitbucket:
+    workspace: "monworkspace"
+    repo_slug: "monrepo"
+    user: "monuser"
+    app_password: "monAppPassword"
+
+  github:
+    token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    repo: "user/repo"
+
+# Paramétrage des tickets (ex: JIRA)
+tickets:
+  # TICKET_BASE_URL sert à construire un lien vers le ticket (ex: JIRA-123)
+  base_url: "https://jira.example.com/browse/"
