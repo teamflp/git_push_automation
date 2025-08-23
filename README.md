@@ -23,7 +23,7 @@ Le script **Git Push Automation** est un outil en Bash qui facilite et renforce 
   - Génération de rapport HTML enrichi.
   - Nettoyage automatisé de branches fusionnées, etc.
 - Une fiabilité et robustesse accrues (messages d’erreurs explicites, logs, mode `dry-run`, etc.).
-- Une configuration flexible via un fichier `.env_git_push_automation` (ou `.env.git_push_automation`).
+- Une configuration flexible via un fichier `config.yaml`.
 
 Le script peut être utilisé en mode interactif (menus et questions) ou en mode non-interactif (avec des options). Il s’adapte aussi bien aux petits dépôts qu’aux projets plus complexes (multi-dépôts).
 
@@ -33,6 +33,7 @@ Le script peut être utilisé en mode interactif (menus et questions) ou en mode
 
 - **Système d’exploitation** : Linux, macOS, ou un environnement compatible Bash (ex: Git Bash sous Windows).
 - **Git** ≥ 2.20.0 (le script vérifie et alerte si la version est trop ancienne).
+- **yq** pour parser la configuration YAML. Installez-le via `pip install yq` ou votre gestionnaire de paquets.
 - **Outils recommandés** (selon vos besoins) :
   - `jq` et `curl` : pour analyser du JSON et envoyer des requêtes HTTP (notamment Slack, GitLab, GitHub).
   - `mailutils` / `mailx` : pour l’envoi d’e-mails automatisés.
@@ -69,7 +70,7 @@ Vous pouvez maintenant utiliser la commande pour vérifier le fonctionnement du 
 git_push_automation -h
 ```
 
-> **Astuce** : Placez un fichier `.env.git_push_automatio` à la racine de **chaque projet** pour personnaliser la configuration du script (tokens, variables, etc.).
+> **Astuce** : Placez un fichier `config.yaml` à la racine de **chaque projet** pour personnaliser la configuration du script (tokens, variables, etc.).
 
 ---
 
@@ -89,133 +90,28 @@ git_push_automation -h
 
 Vous verrez alors l’aide avec la liste des options disponibles.
 
-## 5. Configuration : `.env.git_push_automation`
+## 5. Configuration : `config.yaml`
 
-- Par défaut, le script cherche un fichier `.env.git_push_automation` à la racine.
+- Par défaut, le script cherche un fichier `config.yaml` à la racine de votre projet.
+- Vous pouvez copier l'exemple fourni (`config.exemple.yaml`) pour créer votre propre fichier `config.yaml`.
+- Dans ce fichier, vous pouvez définir toutes les variables de configuration, comme les URLs de webhook, les tokens d'API, etc. Le script lira ce fichier pour configurer son comportement.
 
-- Vous pouvez copier l’exemple fourni (s’il y en a un) ou créer votre propre fichier.
+Voici un exemple de structure pour votre `config.yaml`:
 
-- Dans ce fichier, vous pouvez définir des variables comme `SLACK_WEBHOOK_URL`, `GITLAB_PROJECT_ID`, `GITLAB_TOKEN`, `EMAIL_RECIPIENTS`, `TEST_COMMAND`, `QUALITY_COMMAND`, etc.
-
-Rénommez le le fichier `.env_git_push_automation.exemple` en `.env_git_push_automation` . Le script charge automatiquement les variables d’environnement depuis le fichier `.env_git_push_automation.` Décommentez les options que vous utiliserez. Par exemple :
-
-```plaintext
+```yaml
 ########################################################################################
-#               CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT                   #
+# CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT (Format YAML)
 ########################################################################################
 
-###> PARAMETRAGE SLACK ###
-# URL du webhook Slack (nouveau format Slack App recommandé)
-# SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T0XXXXXXXXX/xxxxxxxxxxxxxxxxxxxxxxxx"
-#
-# Canal Slack où envoyer les notifications
-# SLACK_CHANNEL="#my-channel"
-#
-# Nom d'utilisateur affiché par le bot
-# SLACK_USERNAME=MY_USERNAME
-#
-# Emoji du bot
-# SLACK_ICON_EMOJI=":ghost:"
-###< PARAMETRAGE SLACK ###
+# Paramétrage Slack
+slack:
+  webhook_url: "https://hooks.slack.com/services/T0XXXXXXXXX/xxxxxxxxxxxxxxxxxxxxxxxx"
+  channel: "#my-channel"
+  username: "MY_USERNAME"
+  icon_emoji: ":ghost:"
 
-###> PARAMETRAGE GITLAB ###
-# ID du projet sur GitLab
-# GITLAB_PROJECT_ID=12345678
-#
-# Jeton d'accès personnel GitLab avec scope 'api'
-# GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#
-# Nom du groupe GitLab (optionnel si nécessaire)
-# GITLAB_GROUP_NAME=mygroup
-###< PARAMETRAGE GITLAB ###
-
-###> PARAMETRAGE EMAIL ###
-#
-# Variables d'environnement pour l'envoi d'e-mails via différentes
-# solutions : SendGrid, Mailgun, Mailjet, AWS SES, ou Gmail SMTP
-#
-
-# Choix du provider (sendgrid | mailgun | mailjet | aws_ses | gmail)
-# Exemple : EMAIL_PROVIDER="sendgrid"
-# EMAIL_PROVIDER="sendgrid"
-
-# SENDGRID : Clé API SendGrid + e-mail expéditeur
-# SENDGRID_API_KEY="SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-# SENDGRID_FROM="smtp.sendgrid.net"
-
-# MAILGUN : Clé API Mailgun, Domaine et From
-# MAILGUN_API_KEY="key-xxxxxxxxxxxxxxxxxxxxxxxx"
-# MAILGUN_DOMAIN="votre-domaine.com"
-# MAILGUN_FROM="no-reply@votre-domaine.com"
-
-# MAILJET : API Key Mailjet, Secret Key et From
-# MAILJET_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"
-# MAILJET_SECRET_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"
-# MAILJET_FROM="no-reply@votre-domaine.com"
-
-# AWS SES : Access Key, Secret, Region et From
-# AWS_SES_ACCESS_KEY="AKIAxxxxxxx"
-# AWS_SES_SECRET_KEY="yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-# AWS_SES_REGION="us-east-1"
-# AWS_SES_FROM="no-reply@votre-domaine.com"
-
-# GMAIL SMTP : Pour un envoi SMTP direct via un compte Gmail
-# SMTP_HOST="smtp.gmail.com"
-# SMTP_PORT="587"
-# SMTP_USER="votreAdresse@gmail.com"
-# SMTP_PASS="motDePasseOuAppPassword"
-# SMTP_FROM="votreAdresse@gmail.com"
-
-# Mode silencieux pour l'installation du mailer (1 = oui)
-# SILENT_INSTALL=1
-
-###< PARAMETRAGE EMAIL ###
-
-###> PARAMETRAGE TESTS ###
-# Indiquez la commande à exécuter avant le commit/push pour valider le code.
-# Si cette commande échoue (code retour != 0), le push est annulé.
-# Exemple : TEST_COMMAND="./run_tests.sh"
-# TEST_COMMAND=""
-###< PARAMETRAGE TESTS ###
-
-###> PARAMETRAGE QUALITE/LINTING ###
-# Indiquez la commande à exécuter pour lancer un linter ou un outil de contrôle qualité.
-# Par exemple : QUALITY_COMMAND="npm run lint"
-# Le script exécutera cette commande avant le commit (si -q est utilisé).
-# QUALITY_COMMAND="npm run lint"
-###< PARAMETRAGE QUALITE/LINTING ###
-
-###>  PARAMETRAGE CI/CD ###
-# URL pour déclencher un pipeline CI après le push.
-# Par exemple, si vous avez un job CI déclenchable par une URL:
-# CI_TRIGGER_URL="https://ci.example.com/trigger?token=XYZ"
-# CI_TRIGGER_URL=
-###<  PARAMETRAGE CI/CD ###
-
-###> PARAMETRAGE DES PLATEFORMES GIT ###
-# Choisissez la plateforme cible : gitlab, github, bitbucket
-# Exemple : PLATFORM="gitlab"
-# PLATFORM=github
-###< PARAMETRAGE DES PLATEFORMES GIT ###
-
-###> PARAMETRAGE BITBUCKET/GITHUB ###
-# BITBUCKET (si PLATFORM=bitbucket)
-# BITBUCKET_WORKSPACE="monworkspace"
-# BITBUCKET_REPO_SLUG="monrepo"
-# BITBUCKET_USER="monuser"
-# BITBUCKET_APP_PASSWORD="monAppPassword"
-#
-# GITHUB (si PLATFORM=github)
-# GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-# GITHUB_REPO="user/repo"
-###> PARAMETRAGE BITBUCKET/GITHUB ###
-
-###> PARAMETRAGE TICKETS JIRA, REDMINE, GITHUB, GITLAB, ETC. ###
-# Si vous avez un système de tickets (JIRA), le script détecte le pattern dans le commit.
-# Ajoutez ici le pattern de ticket si vous souhaitez un lien spécifique.
-# Par exemple : TICKET_BASE_URL="https://jira.example.com/browse/"
-# TICKET_BASE_URL="https://jira.example.com/browse/"
-###< PARAMETRAGE TICKETS JIRA, REDMINE, GITHUB, GITLAB, ETC. ###
+# ... et ainsi de suite pour les autres configurations (GitLab, email, etc.)
+# Référez-vous à config.exemple.yaml pour la structure complète.
 ```
 
 En l'absence de certaines variables, les fonctionnalités associées seront ignorées ou dégradées.
@@ -224,12 +120,11 @@ En l'absence de certaines variables, les fonctionnalités associées seront igno
 
 ### 6.1. Exécution simple (flux interactif)
 
-Dans votre fichier .gitignore, ajoutez les fichiers suivants pour ne pas le suivre dans le dépôt :
+Dans votre fichier .gitignore, ajoutez les fichiers suivants pour ne pas les suivre dans le dépôt :
 
 ```plaintext
 /.vscode/
-/.env
-/.env.git_push_automation
+/config.yaml
 /git_push_automation.log
 /backup/
 /reports/
