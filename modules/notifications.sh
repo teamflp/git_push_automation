@@ -6,20 +6,20 @@
 function set_email_recipients() {
     # Vérifier si EMAIL_RECIPIENTS est déjà défini
     if [ -n "$EMAIL_RECIPIENTS" ]; then
-        echo_color "$GREEN" "Les destinataires e-mail actuels : $EMAIL_RECIPIENTS"
+        echo_color "$GREEN" "$(get_string "email_current_recipients" "$EMAIL_RECIPIENTS")"
         return
     fi
 
     # Si non défini, demander à l'utilisateur
-    echo_color "$YELLOW" "Aucun destinataire e-mail n'est défini. Voulez-vous en saisir maintenant ? (y/n)"
+    echo_color "$YELLOW" "$(get_string "email_no_recipients_prompt" "$(get_string 'prompt_yes_no')")"
     read -r ANSWER
     if [ "$ANSWER" == "y" ]; then
-        echo_color "$YELLOW" "Entrez les adresses e-mail séparées par des virgules (ex: user1@example.com,user2@example.com) :"
+        echo_color "$YELLOW" "$(get_string "email_prompt_addresses")"
         read -r USER_EMAILS
 
         # Vérification simple (optionnelle) : s’assurer que la variable n’est pas vide
         if [ -z "$USER_EMAILS" ]; then
-            echo_color "$RED" "Aucune adresse fournie, les e-mails ne seront pas envoyés."
+            echo_color "$RED" "$(get_string "email_no_address_provided")"
             log_action "WARN" "Aucune adresse e-mail saisie."
             return
         fi
@@ -27,10 +27,10 @@ function set_email_recipients() {
         # Assigner les destinataires à EMAIL_RECIPIENTS
         EMAIL_RECIPIENTS="$USER_EMAILS"
         export EMAIL_RECIPIENTS
-        echo_color "$GREEN" "Destinataires définis : $EMAIL_RECIPIENTS"
+        echo_color "$GREEN" "$(get_string "email_recipients_set" "$EMAIL_RECIPIENTS")"
         log_action "INFO" "EMAIL_RECIPIENTS défini à partir de l'entrée utilisateur."
     else
-        echo_color "$YELLOW" "Aucune adresse e-mail définie. Les notifications par e-mail ne seront pas envoyées."
+        echo_color "$YELLOW" "$(get_string "email_no_recipients_skipped")"
         log_action "INFO" "Aucune adresse e-mail définie, pas d'envoi d'e-mail."
     fi
 }
@@ -78,9 +78,9 @@ function send_email_via_sendgrid() {
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
-    echo "E-mail envoyé via SendGrid à $to (HTTP $http_status)."
+    echo "$(get_string "email_send_success" "SendGrid" "$to" "$http_status")"
   else
-    echo "Erreur envoi SendGrid (HTTP $http_status): $body"
+    echo "$(get_string "email_send_error" "SendGrid" "$http_status" "$body")"
   fi
 }
 
@@ -113,9 +113,9 @@ function send_email_via_mailgun() {
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
-    echo "E-mail envoyé via Mailgun à $to (HTTP $http_status)."
+    echo "$(get_string "email_send_success" "Mailgun" "$to" "$http_status")"
   else
-    echo "Erreur envoi Mailgun (HTTP $http_status): $body"
+    echo "$(get_string "email_send_error" "Mailgun" "$http_status" "$body")"
   fi
 }
 
@@ -163,9 +163,9 @@ function send_email_via_mailjet() {
   body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
   if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
-    echo "E-mail envoyé via Mailjet à $to (HTTP $http_status)."
+    echo "$(get_string "email_send_success" "Mailjet" "$to" "$http_status")"
   else
-    echo "Erreur envoi Mailjet (HTTP $http_status): $body"
+    echo "$(get_string "email_send_error" "Mailjet" "$http_status" "$body")"
   fi
 }
 
@@ -230,30 +230,33 @@ function send_notification() {
         check_mailer
         # shellcheck disable=SC2181
         if [ $? -ne 0 ]; then
-            echo_color "$YELLOW" "Pas de mailer, pas d'e-mail."
+            echo_color "$YELLOW" "$(get_string "email_notif_no_mailer")"
             log_action "WARN" "No mailer"
         else
-            local subject="[GIT PUSH] Nouveau push sur la branche $BRANCH_NAME"
-            local email_body="Bonjour l'équipe,
+            local subject; subject=$(get_string "email_subject" "$BRANCH_NAME")
+            local email_body; email_body=$(cat <<EOM
+$(get_string "email_body_greeting")
 
-Un nouveau push a été effectué sur la branche '$BRANCH_NAME'.
+$(get_string "email_body_line1" "$BRANCH_NAME")
 
-- Auteur : $email_user
-- Projet : $project_name
-- Commit : $commit_hash
+- $(get_string "email_body_author" "$email_user")
+- $(get_string "email_body_project" "$project_name")
+- $(get_string "email_body_commit" "$commit_hash")
 
-Voir le commit : $commit_url
+$(get_string "email_body_see_commit" "$commit_url")
 
-Cordialement,
-Votre script Git"
+$(get_string "email_body_closing")
+$(get_string "email_body_signature")
+EOM
+)
 
             if [ "$DRY_RUN" == "y" ]; then
-                echo_color "$GREEN" "Simulation : Envoi e-mail via $EMAIL_PROVIDER à $EMAIL_RECIPIENTS"
-                echo_color "$GREEN" "Sujet : $subject"
+                echo_color "$GREEN" "$(get_string "email_notif_simulation" "$EMAIL_PROVIDER" "$EMAIL_RECIPIENTS")"
+                echo_color "$GREEN" "$(get_string "email_notif_subject_title") $subject"
                 echo "$email_body"
             else
                 if [ -z "$EMAIL_PROVIDER" ]; then
-                    echo_color "$RED" "Erreur : Pas de EMAIL_PROVIDER défini (sendgrid, mailgun, mailjet...)."
+                    echo_color "$RED" "$(get_string "email_notif_no_provider")"
                     log_action "ERROR" "Aucun EMAIL_PROVIDER défini."
                 else
                     # Selon la valeur de $EMAIL_PROVIDER, on appelle la bonne fonction
@@ -268,7 +271,7 @@ Votre script Git"
                             send_email_via_mailjet "$EMAIL_RECIPIENTS" "$subject" "$email_body"
                             ;;
                         *)
-                            echo_color "$RED" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
+                            echo_color "$RED" "$(get_string "email_notif_unknown_provider" "$EMAIL_PROVIDER")"
                             log_action "ERROR" "EMAIL_PROVIDER inconnu : $EMAIL_PROVIDER"
                             ;;
                     esac
@@ -283,7 +286,7 @@ Votre script Git"
     notify_mattermost
 
     echo ""
-    echo_color "$GREEN" "------------- FIN DU RAPPORT -------------"
+    echo_color "$GREEN" "$(get_string "report_end_banner")"
 }
 
 function send_custom_webhook() {
@@ -292,9 +295,11 @@ function send_custom_webhook() {
 
     #### 1) Webhook Slack ####
     if [ -n "$SLACK_WEBHOOK_URL" ]; then
-        local slack_payload="{\"message\": \"Nouveau push sur $BRANCH_NAME par $email.\"}"
+        local slack_message; slack_message=$(get_string "webhook_slack_message" "$BRANCH_NAME" "$email")
+        local slack_payload; slack_payload=$(jq -n --arg msg "$slack_message" '{"message": $msg}')
+
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : custom Slack webhook"
+            echo_color "$GREEN" "$(get_string "webhook_slack_sim")"
             echo "$slack_payload"
         else
             curl -s -X POST -H "Content-type: application/json" \
@@ -314,7 +319,7 @@ function send_custom_webhook() {
         commit_hash=$(git rev-parse HEAD)
 
         # Message brut à commenter
-        local raw_message="Nouveau push sur la branche $BRANCH_NAME par $email."
+        local raw_message; raw_message=$(get_string "webhook_github_message" "$BRANCH_NAME" "$email")
 
         # === DEBUG LOGS ===
         echo_color "$BLUE" "=== DEBUG custom GitHub webhook ==="
@@ -327,7 +332,7 @@ function send_custom_webhook() {
 
         # Vérifier si jq est installé
         if ! command -v jq &>/dev/null; then
-            echo_color "$RED" "Erreur : 'jq' n'est pas installé. Impossible d'échapper le message."
+            echo_color "$RED" "$(get_string "webhook_github_jq_missing")"
             log_action "ERROR" "jq manquant pour l'échappement JSON GitHub"
             return
         fi
@@ -346,7 +351,7 @@ function send_custom_webhook() {
         echo_color "$BLUE" "==================================="
 
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : custom GitHub webhook (commentaire sur commit)"
+            echo_color "$GREEN" "$(get_string "webhook_github_sim")"
              echo "$github_payload"
         else
             # Envoi d'un commentaire sur le commit via l'API GitHub
@@ -362,11 +367,11 @@ function send_custom_webhook() {
              body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
             if [ "$http_status" -ne 201 ]; then
-                 echo_color "$RED" "Erreur custom webhook GitHub HTTP:$http_status"
+                 echo_color "$RED" "$(get_string "webhook_github_error" "$http_status")"
                  echo_color "$RED" "Réponse: $body"
                  log_action "ERROR" "GitHub custom webhook fail $http_status $body"
             else
-                 echo_color "$GREEN" "Webhook GitHub OK."
+                 echo_color "$GREEN" "$(get_string "webhook_github_success")"
                  log_action "INFO" "Webhook GitHub OK."
             fi
         fi
@@ -429,10 +434,13 @@ function generate_report() {
     local commit_link="${web_repo_url}/commit/${commit_hash}"
 
     # Détection d'un ticket éventuel dans le message de commit
-    local ticket_link=""
+    local ticket_html=""
     if [[ -n "$TICKET_BASE_URL" && "$commit_msg" =~ ([A-Z]+-[0-9]+) ]]; then
         local ticket_id="${BASH_REMATCH[1]}"
-        ticket_link="$TICKET_BASE_URL$ticket_id"
+        local ticket_link="$TICKET_BASE_URL$ticket_id"
+        ticket_html="<a href=\"$ticket_link\">$(get_string "report_ticket_go_to")</a> ($(get_string "report_ticket_detected" "$ticket_id"))"
+    else
+        ticket_html="<span class=\"no-ticket\">$(get_string "report_ticket_none")</span>"
     fi
 
     # Récupération des fichiers modifiés lors du dernier commit
@@ -461,198 +469,140 @@ function generate_report() {
     local commits_count
     commits_count=$(echo "$recent_commits_html" | grep -c '^<tr>')
 
+    # Get all translated strings for the report
+    local r_title; r_title=$(get_string "report_html_title")
+    local r_desc_p1; r_desc_p1=$(get_string "report_html_desc_p1")
+    local r_desc_p2; r_desc_p2=$(get_string "report_html_desc_p2" "$changed_files_count" "$commits_count")
+    local r_h2_commit; r_h2_commit=$(get_string "report_html_h2_commit_details")
+    local r_th_branch; r_th_branch=$(get_string "report_th_branch")
+    local r_th_project; r_th_project=$(get_string "report_th_project")
+    local r_th_commit; r_th_commit=$(get_string "report_th_commit")
+    local r_th_author; r_th_author=$(get_string "report_th_author")
+    local r_th_author_date; r_th_author_date=$(get_string "report_th_author_date")
+    local r_th_committer; r_th_committer=$(get_string "report_th_committer")
+    local r_th_committer_date; r_th_committer_date=$(get_string "report_th_committer_date")
+    local r_th_message; r_th_message=$(get_string "report_th_message")
+    local r_th_ticket; r_th_ticket=$(get_string "report_th_linked_ticket")
+    local r_h2_files; r_h2_files=$(get_string "report_html_h2_files")
+    local r_th_status; r_th_status=$(get_string "report_th_status")
+    local r_th_file; r_th_file=$(get_string "report_th_file")
+    local r_h2_recent; r_h2_recent=$(get_string "report_html_h2_recent_commits")
+    local r_th_hash; r_th_hash=$(get_string "report_th_hash")
+    local r_th_author_col; r_th_author_col=$(get_string "report_th_author_col")
+    local r_th_date_col; r_th_date_col=$(get_string "report_th_date_col")
+    local r_th_message_col; r_th_message_col=$(get_string "report_th_message_col")
+    local r_footer_gen; r_footer_gen=$(get_string "report_footer_generated_on" "$(date '+%Y-%m-%d %H:%M:%S')")
+    local r_footer_ver; r_footer_ver=$(get_string "report_footer_script_version" "$SCRIPT_VERSION")
+    local r_footer_author; r_footer_author=$(get_string "report_footer_author" "$email")
+
     cat > "$report_file" <<EOF
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="$LANGUAGE">
 <head>
     <meta charset="UTF-8">
-    <title>Rapport de push Git</title>
+    <title>$r_title</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            background: #f9f9f9;
-            color: #333;
-        }
-        header {
-            background: #2c3e50;
-            color: #ecf0f1;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-        header .logo {
-            display: flex;
-            align-items: center;
-        }
-        header img {
-            height: 40px;
-            margin-right: 15px;
-        }
-        header h1 {
-            font-size: 24px;
-            margin: 0;
-        }
-        .container {
-            width: 90%;
-            max-width: 1000px;
-            margin: auto;
-        }
-        h2 {
-            color: #2c3e50;
-            border-bottom: 2px solid #2c3e50;
-            padding-bottom: 5px;
-            margin-top: 50px;
-            margin-bottom: 20px;
-            position: relative;
-        }
-        h2:before {
-            content: "⚙ ";
-            font-weight: normal;
-            color: #2c3e50;
-            position: absolute;
-            left: -30px;
-            top: 0;
-        }
-        p.description {
-            font-size: 15px;
-            line-height: 1.5;
-            margin-bottom: 20px;
-        }
-        p.summary {
-            font-size: 14px;
-            margin-bottom: 30px;
-            color: #555;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            background: #fff;
-            border: 1px solid #ccc;
-            margin-bottom: 30px;
-        }
-        th, td {
-            padding: 10px 12px;
-            border: 1px solid #ddd;
-            vertical-align: top;
-        }
-        th {
-            background: #f2f2f2;
-            text-align: left;
-            font-weight: bold;
-            width: 25%;
-        }
-        .commit-msg {
-            white-space: pre-wrap;
-        }
-        .footer {
-            margin-top: 20px;
-            font-size: 0.85em;
-            color: #555;
-            text-align: center;
-            padding-bottom: 30px;
-        }
-        a {
-            color: #2980b9;
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-        a:hover {
-            text-decoration: underline;
-            color: #1a6fb9;
-        }
-        .no-ticket {
-            color: #7f8c8d;
-            font-style: italic;
-        }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f9f9f9; color: #333; }
+        header { background: #2c3e50; color: #ecf0f1; padding: 20px; margin-bottom: 30px; }
+        header .logo { display: flex; align-items: center; }
+        header img { height: 40px; margin-right: 15px; }
+        header h1 { font-size: 24px; margin: 0; }
+        .container { width: 90%; max-width: 1000px; margin: auto; }
+        h2 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 5px; margin-top: 50px; margin-bottom: 20px; position: relative; }
+        h2:before { content: "⚙ "; font-weight: normal; color: #2c3e50; position: absolute; left: -30px; top: 0; }
+        p.description { font-size: 15px; line-height: 1.5; margin-bottom: 20px; }
+        p.summary { font-size: 14px; margin-bottom: 30px; color: #555; }
+        table { border-collapse: collapse; width: 100%; background: #fff; border: 1px solid #ccc; margin-bottom: 30px; }
+        th, td { padding: 10px 12px; border: 1px solid #ddd; vertical-align: top; }
+        th { background: #f2f2f2; text-align: left; font-weight: bold; width: 25%; }
+        .commit-msg { white-space: pre-wrap; }
+        .footer { margin-top: 20px; font-size: 0.85em; color: #555; text-align: center; padding-bottom: 30px; }
+        a { color: #2980b9; text-decoration: none; transition: color 0.2s ease; }
+        a:hover { text-decoration: underline; color: #1a6fb9; }
+        .no-ticket { color: #7f8c8d; font-style: italic; }
     </style>
 </head>
 <body>
 <header>
     <div class="logo">
         <img src="https://via.placeholder.com/40x40/ffffff/000000?text=G" alt="Logo">
-        <h1>Rapport de push Git</h1>
+        <h1>$r_title</h1>
     </div>
 </header>
 <div class="container">
-    <p class="description">
-        Ce rapport a été généré automatiquement après un push. Il récapitule les informations clés du push effectué,
-        notamment la branche, l'auteur, le commit et le message associé. Il peut être utilisé pour un suivi plus précis
-        des modifications introduites dans le dépôt.
-    </p>
-    <p class="summary">Ce push a modifié $changed_files_count fichier(s) et affiche un aperçu des $commits_count derniers commits.</p>
+    <p class="description">$r_desc_p1</p>
+    <p class="summary">$r_desc_p2</p>
 
-    <h2>Détails du dernier commit</h2>
+    <h2>$r_h2_commit</h2>
     <table>
         <tr>
-            <th>Branche</th>
+            <th>$r_th_branch</th>
             <td><a href="$branch_link">$BRANCH_NAME</a></td>
         </tr>
         <tr>
-            <th>Projet (Remote URL)</th>
+            <th>$r_th_project</th>
             <td><a href="$web_repo_url">$web_repo_url</a></td>
         </tr>
         <tr>
-            <th>Commit</th>
+            <th>$r_th_commit</th>
             <td><a href="$commit_link">$commit_hash</a></td>
         </tr>
         <tr>
-            <th>Auteur du Commit</th>
+            <th>$r_th_author</th>
             <td>$commit_author ($commit_author_email)</td>
         </tr>
         <tr>
-            <th>Date du Commit</th>
+            <th>$r_th_author_date</th>
             <td>$commit_date</td>
         </tr>
         <tr>
-            <th>Committer</th>
+            <th>$r_th_committer</th>
             <td>$committer ($committer_email)</td>
         </tr>
         <tr>
-            <th>Date du Committer</th>
+            <th>$r_th_committer_date</th>
             <td>$committer_date</td>
         </tr>
         <tr>
-            <th>Message</th>
+            <th>$r_th_message</th>
             <td class="commit-msg">$commit_msg</td>
         </tr>
         <tr>
-            <th>Ticket Lié</th>
-            <td>
-                ${ticket_link:+"<a href=\"$ticket_link\">Aller au ticket</a> (Ticket détecté: $ticket_id)"}${ticket_link:-<span class="no-ticket">Aucun ticket détecté</span>}
-            </td>
+            <th>$r_th_ticket</th>
+            <td>$ticket_html</td>
         </tr>
     </table>
 
-    <h2>Fichiers modifiés lors du dernier commit</h2>
+    <h2>$r_h2_files</h2>
     <table>
         <tr>
-            <th style="width:100px;">Statut</th>
-            <th>Fichier</th>
+            <th style="width:100px;">$r_th_status</th>
+            <th>$r_th_file</th>
         </tr>
         $changed_files_html
     </table>
 
-    <h2>Aperçu des derniers commits</h2>
+    <h2>$r_h2_recent</h2>
     <table>
         <tr>
-            <th style="width:100px;">Hash</th>
-            <th>Auteur</th>
-            <th>Date</th>
-            <th>Message</th>
+            <th style="width:100px;">$r_th_hash</th>
+            <th>$r_th_author_col</th>
+            <th>$r_th_date_col</th>
+            <th>$r_th_message_col</th>
         </tr>
         $recent_commits_html
     </table>
 
     <div class="footer">
-        <p><em>Généré le $(date '+%Y-%m-%d %H:%M:%S')</em></p>
-        <p>Version du script : $SCRIPT_VERSION</p>
-        <p>Auteur du script actuel : $email</p>
+        <p><em>$r_footer_gen</em></p>
+        <p>$r_footer_ver</p>
+        <p>$r_footer_author</p>
     </div>
 </div>
 </body>
 </html>
 EOF
 
-    echo_color "$GREEN" "Rapport généré : $report_file"
+    echo_color "$GREEN" "$(get_string "report_generate_success" "$report_file")"
     log_action "INFO" "Rapport généré : $report_file"
 }

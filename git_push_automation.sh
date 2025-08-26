@@ -66,9 +66,47 @@ function echo_color() {
 function display_header() {
     clear
     echo_color "$BLUE$BOLD" "========================"
-    echo_color "$BLUE$BOLD" " GIT PUSH AUTOMATION "
+    echo_color "$BLUE$BOLD" " $(get_string "header_title") "
     echo_color "$BLUE$BOLD" "========================"
     echo ""
+}
+
+###############################################################################
+# I18N and STRING FORMATTING
+###############################################################################
+# Retrieves a string by its key and formats it with given arguments.
+# This function reads the language file on each call as a robust workaround
+# for shell variable scoping issues.
+function get_string() {
+    local key="$1"
+    shift
+
+    # LANGUAGE must be a global variable set by load_config
+    local lang_file
+    lang_file="$(dirname "$0")/lang/${LANGUAGE:-fr}.sh"
+
+    if [ ! -f "$lang_file" ]; then
+        echo "!!LANG FILE NOT FOUND: $lang_file!!"
+        return
+    fi
+
+    # Pattern to find: I18N_STRINGS["key"]="value"
+    # We grep for the key, then use sed to extract just the value between quotes.
+    local line
+    line=$(grep "I18N_STRINGS\[\"$key\"\]" "$lang_file")
+
+    if [ -z "$line" ]; then
+        echo "!!MISSING_STRING: $key!!"
+        return
+    fi
+
+    # sed 's/.*="\(.*\)"/\1/' extracts the content between the last =" and "
+    local value
+    value=$(echo "$line" | sed -e 's/.*="\(.*\)"/\1/')
+
+    # Use printf for formatting any additional arguments
+    # shellcheck disable=SC2059
+    printf "$value" "$@"
 }
 
 ###############################################################################
@@ -76,17 +114,19 @@ function display_header() {
 ###############################################################################
 LOG_FILE="./git_push_automation.log"
 
-# Vérification ou création du fichier de log
-if [ ! -f "$LOG_FILE" ]; then
-    touch "$LOG_FILE" || { echo_color "$RED" "Erreur : Impossible de créer $LOG_FILE"; exit 1; }
-    echo_color "$GREEN" "Fichier de log créé : $LOG_FILE"
-fi
+function init_logging() {
+    # Vérification ou création du fichier de log
+    if [ ! -f "$LOG_FILE" ]; then
+        touch "$LOG_FILE" || { echo_color "$RED" "$(get_string "error_cannot_create_file" "$LOG_FILE")"; exit 1; }
+        echo_color "$GREEN" "$(get_string "log_file_created" "$LOG_FILE")"
+    fi
 
-# Vérifier si le fichier de log est accessible en écriture
-if [ ! -w "$LOG_FILE" ]; then
-    echo_color "$RED" "Erreur : Impossible d'écrire dans $LOG_FILE"
-    exit 1
-fi
+    # Vérifier si le fichier de log est accessible en écriture
+    if [ ! -w "$LOG_FILE" ]; then
+        echo_color "$RED" "$(get_string "error_cannot_write_to_file" "$LOG_FILE")"
+        exit 1
+    fi
+}
 
 # Fonction de journalisation avec niveaux de verbosité
 function log_action() {
@@ -146,13 +186,13 @@ function compare_semver() {
 # perform_script_update() télécharge le script et le remplace
 ###############################################################################
 function perform_script_update() {
-    echo_color "$BLUE" "Téléchargement de la dernière version du script..."
+    echo_color "$BLUE" "$(get_string "update_downloading")"
 
     # Commande de mise à jour
     sudo curl -L \
       "https://raw.githubusercontent.com/teamflp/git_push_automation/master/git_push_automation.sh" \
       -o /usr/local/bin/git_push_automation || {
-        echo_color "$RED" "Erreur lors du téléchargement de la mise à jour."
+        echo_color "$RED" "$(get_string "update_download_error")"
         log_action "ERROR" "Echec de perform_script_update()"
         exit 1
       }
@@ -160,7 +200,7 @@ function perform_script_update() {
     # On rend le script exécutable
     sudo chmod +x /usr/local/bin/git_push_automation
 
-    echo_color "$GREEN" "Mise à jour terminée. Relancez la commande pour utiliser la nouvelle version."
+    echo_color "$GREEN" "$(get_string "update_finished")"
     log_action "INFO" "Script mis à jour vers la version distante."
 }
 
@@ -177,7 +217,7 @@ function check_for_script_update() {
     tags_json=$(curl -s "https://api.github.com/repos/$repo_owner/$repo_name/tags")
 
     if [ -z "$tags_json" ]; then
-        echo_color "$YELLOW" "Impossible de récupérer la liste des tags."
+        echo_color "$YELLOW" "$(get_string "update_check_error")"
         log_action "WARN" "Impossible de récupérer liste tags GitHub."
         return
     fi
@@ -202,7 +242,7 @@ function check_for_script_update() {
     done < <(echo "$tags_json" | jq -r '.[].name')
 
     if [ -z "$latest_tag" ]; then
-        echo_color "$YELLOW" "Aucun tag trouvé sur le dépôt $repo_owner/$repo_name."
+        echo_color "$YELLOW" "$(get_string "update_no_tags_found" "$repo_owner" "$repo_name")"
         log_action "WARN" "Aucun tag trouvé."
         return
     fi
@@ -211,18 +251,18 @@ function check_for_script_update() {
     local cmp
     cmp=$(compare_semver "$latest_tag" "$SCRIPT_VERSION")
     if [ "$cmp" -eq 1 ]; then
-        echo_color "$BLUE" "Nouvelle version disponible : $latest_tag (actuelle : $SCRIPT_VERSION)."
-        echo_color "$YELLOW" "Voulez-vous mettre à jour ? (y/n)"
+        echo_color "$BLUE" "$(get_string "update_available" "$latest_tag" "$SCRIPT_VERSION")"
+        echo_color "$YELLOW" "$(get_string "update_prompt" "$(get_string 'prompt_yes_no')")"
         read -r answer
         if [[ "$answer" =~ ^[Yy]$ ]]; then
             perform_script_update
         else
-            echo_color "$YELLOW" "Mise à jour annulée. Vous restez en $SCRIPT_VERSION."
+            echo_color "$YELLOW" "$(get_string "update_cancelled" "$SCRIPT_VERSION")"
         fi
     elif [ "$cmp" -eq 0 ]; then
-        echo_color "$GREEN" "Vous êtes déjà à jour (version $SCRIPT_VERSION)."
+        echo_color "$GREEN" "$(get_string "update_already_latest" "$SCRIPT_VERSION")"
     else
-        echo_color "$YELLOW" "Le tag distant ($latest_tag) est inférieur à votre version ($SCRIPT_VERSION)."
+        echo_color "$YELLOW" "$(get_string "update_local_newer" "$latest_tag" "$SCRIPT_VERSION")"
         log_action "INFO" "Le script local est plus récent ?"
     fi
 }
@@ -232,7 +272,7 @@ function check_for_script_update() {
 ###############################################################################
 function check_mailer() {
     if command -v mail &> /dev/null; then
-        echo_color "$GREEN" "Le système de messagerie (mail) est déjà installé."
+        echo_color "$GREEN" "$(get_string "mailer_already_installed")"
         log_action "INFO" "Système de messagerie déjà installé."
         return 0
     fi
@@ -242,24 +282,24 @@ function check_mailer() {
         if detect_and_install_mailer; then
             return 0
         else
-            echo_color "$RED" "Impossible d'installer automatiquement mail en mode silencieux."
+            echo_color "$RED" "$(get_string "mailer_silent_install_failed")"
             log_action "ERROR" "Echec mail silent install."
             return 1
         fi
     fi
 
-    echo_color "$YELLOW" "Aucun mail détecté. Installer ? (y/n)"
+    echo_color "$YELLOW" "$(get_string "mailer_not_found_prompt" "$(get_string 'prompt_yes_no')")"
     read -r INSTALL_MAILER
     if [ "$INSTALL_MAILER" == "y" ]; then
         if detect_and_install_mailer; then
             return 0
         else
-            echo_color "$RED" "Échec installation mail. Installez manuellement."
+            echo_color "$RED" "$(get_string "mailer_install_failed_manual")"
             log_action "ERROR" "Mail install failed."
             return 1
         fi
     else
-        echo_color "$RED" "Pas d'outil mail. Pas d'e-mails envoyés."
+        echo_color "$RED" "$(get_string "mailer_skipped_no_emails")"
         log_action "WARN" "Pas de mail, pas d'envoi e-mails."
         return 1
     fi
@@ -270,65 +310,65 @@ function detect_and_install_mailer() {
     case "$OSTYPE" in
         linux-gnu*)
             if command -v apt-get &> /dev/null; then
-                echo_color "$BLUE" "Installation mailutils via apt-get..."
+                echo_color "$BLUE" "$(get_string "mailer_installing_apt")"
                 # shellcheck disable=SC2015
                 sudo apt-get update && sudo apt-get install -y mailutils || {
-                    echo_color "$RED" "Échec apt-get mailutils."
+                    echo_color "$RED" "$(get_string "mailer_install_failed_apt")"
                     log_action "ERROR" "apt-get mail fail."
                     return 1
                 }
             elif command -v yum &> /dev/null; then
-                echo_color "$BLUE" "Installation mailx via yum..."
+                echo_color "$BLUE" "$(get_string "mailer_installing_yum")"
                 sudo yum install -y mailx || {
-                    echo_color "$RED" "Échec yum mailx."
+                    echo_color "$RED" "$(get_string "mailer_install_failed_yum")"
                     log_action "ERROR" "yum mail fail."
                     return 1
                 }
             elif command -v dnf &> /dev/null; then
-                echo_color "$BLUE" "Installation mailx via dnf..."
+                echo_color "$BLUE" "$(get_string "mailer_installing_dnf")"
                 sudo dnf install -y mailx || {
-                    echo_color "$RED" "Échec dnf mailx."
+                    echo_color "$RED" "$(get_string "mailer_install_failed_dnf")"
                     log_action "ERROR" "dnf mail fail."
                     return 1
                 }
             else
-                echo_color "$RED" "Aucun apt/yum/dnf détecté."
+                echo_color "$RED" "$(get_string "mailer_no_pkg_manager")"
                 log_action "ERROR" "No pkg manager for mail."
                 return 1
             fi
             ;;
         darwin*)
             if command -v brew &> /dev/null; then
-                echo_color "$BLUE" "Installation mailutils via brew..."
+                echo_color "$BLUE" "$(get_string "mailer_installing_brew")"
                 brew install mailutils || {
-                    echo_color "$RED" "Échec brew mailutils."
+                    echo_color "$RED" "$(get_string "mailer_install_failed_brew")"
                     log_action "ERROR" "brew mail fail."
                     return 1
                 }
             else
-                echo_color "$YELLOW" "Installez Homebrew puis mailutils manuellement."
+                echo_color "$YELLOW" "$(get_string "mailer_install_manual_mac")"
                 log_action "WARN" "Pas de mail sur mac sans brew."
                 return 1
             fi
             ;;
         cygwin*|msys*|win32*)
-            echo_color "$RED" "Windows: installez manuellement un outil mail."
+            echo_color "$RED" "$(get_string "mailer_install_manual_windows")"
             log_action "WARN" "Windows mail non géré."
             return 1
             ;;
         *)
-            echo_color "$RED" "OS non reconnu, mail manuellement."
+            echo_color "$RED" "$(get_string "mailer_unsupported_os")"
             log_action "ERROR" "Mail OS unsupported."
             return 1
             ;;
     esac
 
     if command -v mail &> /dev/null; then
-        echo_color "$GREEN" "Mail installé."
+        echo_color "$GREEN" "$(get_string "mailer_install_success")"
         log_action "INFO" "Mail installé."
         return 0
     else
-        echo_color "$RED" "mail non dispo après install."
+        echo_color "$RED" "$(get_string "mailer_not_found_post_install")"
         log_action "ERROR" "Mail absent post-install."
         return 1
     fi
@@ -338,41 +378,41 @@ function detect_and_install_mailer() {
 # AIDE ET OPTIONS
 ###############################################################################
 function usage() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "$(get_string "usage_header" "$0")"
     echo ""
-    echo "Options :"
-    echo "  -f [files]       Spécifie les fichiers à ajouter"
-    echo "  -m [message]     Message de commit (Type: Description)"
-    echo "  -b [branch]      Nom de la branche distante pour le push"
-    echo "  -p               git pull avant le push"
-    echo "  -M [branch]      merge d'une branche avant le push"
-    echo "  -r [repo-dir]    Répertoire multi-dépôts"
-    echo "  -v               Mode verbeux"
-    echo "  -d               Mode dry-run (simulation)"
-    echo "  -h               Afficher l'aide"
-    echo "  -g               Signer le commit GPG"
-    echo "  -R [branch]      Rebase sur cette branche avant le push"
-    echo "  -t               Lancer tests avant commit/push"
-    echo "  -T [tag_name]    Créer un tag et release"
-    echo "  -H               Générer un rapport HTML"
-    echo "  -C               Résolution auto des conflits"
-    echo "  -k               Gérer les hooks Git"
-    echo "  -S               Gérer les sous-modules"
-    echo "  -q               Vérifications qualité (lint, sécurité)"
-    echo "  -B [branch]      Comparer la branche courante à une autre branche"
-    echo "  -P [N]           Exporter les N derniers commits en patch"
-    echo "  -x               Nettoyer les branches locales fusionnées"
-    echo "  -E               Générer stats de commits"
-    echo "  -I               Intégration tickets (lier commit aux tickets JIRA par ex)"
-    echo "  -U               Déclencher pipeline CI après push"
-    echo "  -L               Loguer la release dans release_history.log"
-    echo "  -X [n]           Rollback (revert ou reset) des n derniers commits"
-    echo "  -Y               Cherry-pick interactif"
-    echo "  -Z               Review/diff complet avant push"
-    echo "  --create-pr      Créer une Pull Request sur GitHub après le push"
-    echo "  --create-mr      Créer une Merge Request sur GitLab après le push"
-    echo "  --ci-friendly    Mode non interactif pour CI (pas de questions posées)"
-    echo "  -V [major|minor|patch]  Incrémenter la version semver et créer un tag"
+    echo "$(get_string "usage_options_title")"
+    echo "$(get_string "usage_opt_f")"
+    echo "$(get_string "usage_opt_m")"
+    echo "$(get_string "usage_opt_b")"
+    echo "$(get_string "usage_opt_p")"
+    echo "$(get_string "usage_opt_M")"
+    echo "$(get_string "usage_opt_r")"
+    echo "$(get_string "usage_opt_v")"
+    echo "$(get_string "usage_opt_d")"
+    echo "$(get_string "usage_opt_h")"
+    echo "$(get_string "usage_opt_g")"
+    echo "$(get_string "usage_opt_R")"
+    echo "$(get_string "usage_opt_t")"
+    echo "$(get_string "usage_opt_T")"
+    echo "$(get_string "usage_opt_H")"
+    echo "$(get_string "usage_opt_C")"
+    echo "$(get_string "usage_opt_k")"
+    echo "$(get_string "usage_opt_S")"
+    echo "$(get_string "usage_opt_q")"
+    echo "$(get_string "usage_opt_B")"
+    echo "$(get_string "usage_opt_P")"
+    echo "$(get_string "usage_opt_x")"
+    echo "$(get_string "usage_opt_E")"
+    echo "$(get_string "usage_opt_I")"
+    echo "$(get_string "usage_opt_U")"
+    echo "$(get_string "usage_opt_L")"
+    echo "$(get_string "usage_opt_X")"
+    echo "$(get_string "usage_opt_Y")"
+    echo "$(get_string "usage_opt_Z")"
+    echo "$(get_string "usage_opt_create_pr")"
+    echo "$(get_string "usage_opt_create_mr")"
+    echo "$(get_string "usage_opt_ci_friendly")"
+    echo "$(get_string "usage_opt_V")"
     exit 1
 }
 
@@ -442,7 +482,7 @@ function process_options() {
             v) VERBOSE="y" ;;
             d)
                 DRY_RUN="y"
-                echo_color "$YELLOW" "Mode simulation (dry-run) activé."
+                echo_color "$YELLOW" "$(get_string "dry_run_activated")"
                 log_action "INFO" "dry-run activé."
                 ;;
             h) usage ;;
@@ -482,11 +522,11 @@ function process_options() {
                 ;;
 
             \?)
-                echo_color "$RED" "Option invalide : -$OPTARG"
+                echo_color "$RED" "$(get_string "error_invalid_option" "$OPTARG")"
                 usage
                 ;;
             :)
-                echo_color "$RED" "L'option -$OPTARG requiert un argument."
+                echo_color "$RED" "$(get_string "error_option_requires_argument" "$OPTARG")"
                 usage
                 ;;
         esac
@@ -526,34 +566,54 @@ function load_config() {
     local config_file="config.yaml"
 
     if [ ! -f "$config_file" ]; then
-        echo_color "$YELLOW" "Le fichier de configuration '$config_file' est manquant."
-        log_action "WARN" "Fichier de configuration '$config_file' manquant."
+        # Cannot use get_string here as language is not yet known
+        echo_color "$YELLOW" "Le fichier de configuration '$config_file' est manquant. / Configuration file '$config_file' is missing."
         exit 1
     fi
 
-    # The yq check is now in check_dependencies
+    # Set the global LANGUAGE variable. get_string will use this.
+    LANGUAGE=$(yq -r '.language // "fr"' "$config_file")
 
-    # This yq command recursively finds all scalar nodes (strings, numbers, booleans)
-    # and creates an uppercase, underscore-separated variable name from the path.
-    # It handles nested structures correctly.
-    # Example: email.sendgrid.api_key becomes EMAIL_SENDGRID_API_KEY
-    local yq_output
-    yq_output=$(yq -r '.. | select(tag != "!!map" and tag != "!!seq") | (path | join("_") | ascii_upcase) + "=" + .' "$config_file")
+    # Explicitly parse all known config values
+    export SLACK_WEBHOOK_URL; SLACK_WEBHOOK_URL=$(yq -r '.slack.webhook_url // ""' "$config_file")
+    export SLACK_CHANNEL; SLACK_CHANNEL=$(yq -r '.slack.channel // ""' "$config_file")
+    export SLACK_USERNAME; SLACK_USERNAME=$(yq -r '.slack.username // ""' "$config_file")
+    export SLACK_ICON_EMOJI; SLACK_ICON_EMOJI=$(yq -r '.slack.icon_emoji // ""' "$config_file")
+    export GITLAB_PROJECT_ID; GITLAB_PROJECT_ID=$(yq -r '.gitlab.project_id // ""' "$config_file")
+    export GITLAB_TOKEN; GITLAB_TOKEN=$(yq -r '.gitlab.token // ""' "$config_file")
+    export GITLAB_GROUP_NAME; GITLAB_GROUP_NAME=$(yq -r '.gitlab.group_name // ""' "$config_file")
+    export SILENT_INSTALL; SILENT_INSTALL=$(yq -r '.silent_install // ""' "$config_file")
+    export EMAIL_PROVIDER; EMAIL_PROVIDER=$(yq -r '.email.provider // ""' "$config_file")
+    export SENDGRID_API_KEY; SENDGRID_API_KEY=$(yq -r '.email.sendgrid.api_key // ""' "$config_file")
+    export SENDGRID_FROM; SENDGRID_FROM=$(yq -r '.email.sendgrid.from // ""' "$config_file")
+    export MAILGUN_API_KEY; MAILGUN_API_KEY=$(yq -r '.email.mailgun.api_key // ""' "$config_file")
+    export MAILGUN_DOMAIN; MAILGUN_DOMAIN=$(yq -r '.email.mailgun.domain // ""' "$config_file")
+    export MAILGUN_FROM; MAILGUN_FROM=$(yq -r '.email.mailgun.from // ""' "$config_file")
+    export MAILJET_API_KEY; MAILJET_API_KEY=$(yq -r '.email.mailjet.api_key // ""' "$config_file")
+    export MAILJET_SECRET_KEY; MAILJET_SECRET_KEY=$(yq -r '.email.mailjet.secret_key // ""' "$config_file")
+    export MAILJET_FROM; MAILJET_FROM=$(yq -r '.email.mailjet.from // ""' "$config_file")
+    export AWS_SES_ACCESS_KEY; AWS_SES_ACCESS_KEY=$(yq -r '.email.aws_ses.access_key // ""' "$config_file")
+    export AWS_SES_SECRET_KEY; AWS_SES_SECRET_KEY=$(yq -r '.email.aws_ses.secret_key // ""' "$config_file")
+    export AWS_SES_REGION; AWS_SES_REGION=$(yq -r '.email.aws_ses.region // ""' "$config_file")
+    export AWS_SES_FROM; AWS_SES_FROM=$(yq -r '.email.aws_ses.from // ""' "$config_file")
+    export GMAIL_HOST; GMAIL_HOST=$(yq -r '.email.gmail.host // ""' "$config_file")
+    export GMAIL_PORT; GMAIL_PORT=$(yq -r '.email.gmail.port // ""' "$config_file")
+    export GMAIL_USER; GMAIL_USER=$(yq -r '.email.gmail.user // ""' "$config_file")
+    export GMAIL_PASS; GMAIL_PASS=$(yq -r '.email.gmail.pass // ""' "$config_file")
+    export GMAIL_FROM; GMAIL_FROM=$(yq -r '.email.gmail.from // ""' "$config_file")
+    export TEST_COMMAND; TEST_COMMAND=$(yq -r '.tests.command // ""' "$config_file")
+    export QUALITY_COMMAND; QUALITY_COMMAND=$(yq -r '.quality.command // ""' "$config_file")
+    export CI_TRIGGER_URL; CI_TRIGGER_URL=$(yq -r '.ci.trigger_url // ""' "$config_file")
+    export PLATFORM; PLATFORM=$(yq -r '.platforms.current_platform // ""' "$config_file")
+    export BITBUCKET_WORKSPACE; BITBUCKET_WORKSPACE=$(yq -r '.platforms.bitbucket.workspace // ""' "$config_file")
+    export BITBUCKET_REPO_SLUG; BITBUCKET_REPO_SLUG=$(yq -r '.platforms.bitbucket.repo_slug // ""' "$config_file")
+    export BITBUCKET_USER; BITBUCKET_USER=$(yq -r '.platforms.bitbucket.user // ""' "$config_file")
+    export BITBUCKET_APP_PASSWORD; BITBUCKET_APP_PASSWORD=$(yq -r '.platforms.bitbucket.app_password // ""' "$config_file")
+    export GITHUB_TOKEN; GITHUB_TOKEN=$(yq -r '.platforms.github.token // ""' "$config_file")
+    export GITHUB_REPO; GITHUB_REPO=$(yq -r '.platforms.github.repo // ""' "$config_file")
+    export TICKET_BASE_URL; TICKET_BASE_URL=$(yq -r '.tickets.base_url // ""' "$config_file")
 
-    if [ -z "$yq_output" ]; then
-        echo_color "$RED" "Erreur: Impossible de lire la configuration depuis '$config_file' avec yq."
-        log_action "ERROR" "Impossible de parser $config_file avec yq."
-        exit 1
-    fi
-
-    # Export all variables parsed from YAML
-    while IFS='=' read -r key value; do
-        if [[ -n "$key" ]]; then # Ensure key is not empty
-            export "$key"="$value"
-        fi
-    done <<< "$yq_output"
-
-    log_action "INFO" "Fichier de configuration YAML chargé : $config_file"
+    log_action "INFO" "$(get_string "config_loaded" "$config_file")"
 }
 
 function check_dependencies() {
@@ -567,7 +627,7 @@ function check_dependencies() {
     done
 
     if [ "${#missing_dependencies[@]}" -ne 0 ]; then
-        echo_color "$RED" "Les commandes suivantes sont manquantes : ${missing_dependencies[*]}"
+        echo_color "$RED" "$(get_string "error_missing_dependencies" "${missing_dependencies[*]}")"
         log_action "ERROR" "Commandes manquantes : ${missing_dependencies[*]}"
         exit 1
     fi
@@ -576,17 +636,17 @@ function check_dependencies() {
     local git_version
     git_version=$(git --version | awk '{print $3}')
     if [ "$(printf '%s\n' "$git_min_version" "$git_version" | sort -V | head -n1)" != "$git_min_version" ]; then
-        echo_color "$RED" "Git version $git_min_version ou supérieure est requise."
+        echo_color "$RED" "$(get_string "error_git_version_too_old" "$git_min_version")"
         log_action "ERROR" "Version de Git trop ancienne : $git_version"
         exit 1
     fi
 
-    log_action "INFO" "Toutes les dépendances sont satisfaites."
+    log_action "INFO" "$(get_string "dependencies_ok")"
 }
 
 function check_permissions() {
     if [ "$EUID" -eq 0 ]; then
-        echo_color "$RED" "Veuillez ne pas exécuter ce script en tant que root."
+        echo_color "$RED" "$(get_string "error_run_as_root")"
         log_action "ERROR" "Le script a été exécuté en tant que root."
         exit 1
     fi
@@ -594,7 +654,7 @@ function check_permissions() {
 
 function check_git_repo() {
     if [ ! -d ".git" ]; then
-        echo_color "$RED" "Erreur : ce répertoire n'est pas un dépôt Git."
+        echo_color "$RED" "$(get_string "error_not_a_git_repo")"
         log_action "ERROR" "Ce répertoire n'est pas un dépôt Git."
         return 1
     fi
@@ -605,11 +665,11 @@ function check_user_email() {
     local email
     email=$(git config --get user.email)
     if [ -z "$email" ]; then
-        echo_color "$YELLOW" "Aucune adresse e-mail configurée pour Git."
-        echo_color "$YELLOW" "Entrez une adresse e-mail pour configurer Git globalement :"
+        echo_color "$YELLOW" "$(get_string "git_email_missing")"
+        echo_color "$YELLOW" "$(get_string "git_email_prompt")"
         read -r email
         if [ -z "$email" ]; then
-            echo_color "$RED" "Erreur : L'adresse e-mail ne peut pas être vide."
+            echo_color "$RED" "$(get_string "git_email_error_empty")"
             log_action "ERROR" "L'adresse e-mail saisie est vide."
             return 1
         fi
@@ -633,22 +693,22 @@ function backup_files() {
             rsync -R "$FILE" "$BACKUP_DIR"
             log_action "INFO" "Fichier sauvegardé : $FILE"
         else
-            echo_color "$YELLOW" "Avertissement : '$FILE' n'existe pas."
+            echo_color "$YELLOW" "$(get_string "backup_file_not_found" "$FILE")"
             log_action "WARN" "Fichier '$FILE' n'existe pas."
         fi
     done
 
-    echo_color "$GREEN" "Sauvegarde terminée dans $BACKUP_DIR"
+    echo_color "$GREEN" "$(get_string "backup_finished" "$BACKUP_DIR")"
     log_action "INFO" "Sauvegarde terminée."
 }
 
 function add_files() {
-    echo_color "$BLUE" "Fichiers modifiés ou nouveaux :"
+    echo_color "$BLUE" "$(get_string "add_modified_files_title")"
     git status -s
     log_action "INFO" "Affichage des modifications."
 
     if [ ${#FILES[@]} -eq 0 ]; then
-        echo_color "$YELLOW" "Entrez les fichiers à ajouter (ou '.' pour tous) :"
+        echo_color "$YELLOW" "$(get_string "add_prompt_for_files")"
         read -r -a INPUT_FILES
         if [ "${INPUT_FILES[0]}" == "." ]; then
             FILES=(".")
@@ -662,7 +722,7 @@ function add_files() {
 
     if [ "${FILES[0]}" == "." ]; then
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : git add ."
+            echo_color "$GREEN" "$(get_string "add_simulation_all")"
         else
             git add .
         fi
@@ -670,12 +730,12 @@ function add_files() {
         for FILE in "${FILES[@]}"; do
             if [ -e "$FILE" ]; then
                 if [ "$DRY_RUN" == "y" ]; then
-                    echo_color "$GREEN" "Simulation : git add '$FILE'"
+                    echo_color "$GREEN" "$(get_string "add_simulation_file" "$FILE")"
                 else
                     git add "$FILE"
                 fi
             else
-                echo_color "$RED" "Le fichier '$FILE' n'existe pas."
+                echo_color "$RED" "$(get_string "add_file_not_exist" "$FILE")"
                 log_action "ERROR" "Fichier '$FILE' inexistant."
                 return 1
             fi
@@ -683,19 +743,19 @@ function add_files() {
     fi
 
     if [ "$DRY_RUN" != "y" ]; then
-        echo_color "$GREEN" "Fichiers ajoutés :"
+        echo_color "$GREEN" "$(get_string "add_files_added_title")"
         git diff --cached --name-only
     else
-        echo_color "$GREEN" "Simulation complète de l'ajout."
+        echo_color "$GREEN" "$(get_string "add_simulation_complete")"
     fi
 }
 
 function improved_validate_commit_message() {
     # Valide le message de commit selon le format Type: Description
     if [[ ! $COMMIT_MSG =~ ^(Tâche|Bug|Amélioration|Refactor):[[:space:]].+ ]]; then
-        echo_color "$RED" "Format invalide."
-        echo_color "$YELLOW" "<Type>: <Description> (Types: Tâche, Bug, Amélioration, Refactor)"
-        echo_color "$GREEN" "Ex: Tâche: Ajout fonctionnalité X"
+        echo_color "$RED" "$(get_string "commit_invalid_format")"
+        echo_color "$YELLOW" "$(get_string "commit_format_hint")"
+        echo_color "$GREEN" "$(get_string "commit_format_example")"
         return 1
     fi
     return 0
@@ -706,15 +766,15 @@ function run_tests() {
     # et si TEST_COMMAND est défini et non vide dans le fichier de configuration.
 
     if [ "$RUN_TESTS" == "y" ] && [ -n "$TEST_COMMAND" ]; then
-        echo_color "$YELLOW" "Exécution des tests avant le commit..."
+        echo_color "$YELLOW" "$(get_string "tests_running")"
         log_action "INFO" "Exécution des tests via : $TEST_COMMAND"
 
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : $TEST_COMMAND"
+            echo_color "$GREEN" "$(get_string "tests_simulation" "$TEST_COMMAND")"
             log_action "INFO" "Simulation des tests."
         else
             if ! $TEST_COMMAND; then
-                echo_color "$RED" "Les tests ont échoué. Annulation du commit."
+                echo_color "$RED" "$(get_string "tests_failed")"
                 log_action "ERROR" "Echec des tests."
                 exit 1
             fi
@@ -728,7 +788,15 @@ function run_tests() {
 }
 
 function create_commit() {
-    local types=("Tâche" "Bug" "Amélioration" "Refactor")
+    # Original keywords for logic/validation
+    local original_types=("Tâche" "Bug" "Amélioration" "Refactor")
+    # Translated types for display in the select menu
+    local display_types=(
+        "$(get_string "commit_type_task")"
+        "$(get_string "commit_type_bug")"
+        "$(get_string "commit_type_improvement")"
+        "$(get_string "commit_type_refactor")"
+    )
     local type_choice=""
     local commit_description=""
 
@@ -737,30 +805,36 @@ function create_commit() {
             improved_validate_commit_message && break || COMMIT_MSG=""
         fi
 
-        echo_color "$BLUE" "Choisissez le type de commit:"
-        PS3="Votre choix (1:Tâche,2:Bug,3:Amélioration,4:Refactor) : "
-        select opt in "${types[@]}"; do
+        echo_color "$BLUE" "$(get_string "commit_prompt_type")"
+        PS3="$(get_string "commit_prompt_ps3")"
+        select opt in "${display_types[@]}"; do
             if [[ -n "$opt" ]]; then
-                type_choice="$opt"
-                break
+                # Find the index of the selected display type
+                for i in "${!display_types[@]}"; do
+                    if [[ "${display_types[$i]}" == "$opt" ]]; then
+                        # Get the original keyword from the other array
+                        type_choice="${original_types[$i]}"
+                        break 2 # Break out of both the for and select loops
+                    fi
+                done
             else
-                echo_color "$RED" "Choix invalide."
+                echo_color "$RED" "$(get_string "commit_invalid_choice")"
             fi
         done
 
-        echo_color "$YELLOW" "Entrez la description du commit :"
+        echo_color "$YELLOW" "$(get_string "commit_prompt_description")"
         read -r commit_description
         COMMIT_MSG="$type_choice: $commit_description"
         # shellcheck disable=SC2030
         # shellcheck disable=SC2015
-        improved_validate_commit_message && break || (echo_color "$RED" "Invalide. Réessayer."; COMMIT_MSG="")
+        improved_validate_commit_message && break || (echo_color "$RED" "$(get_string "commit_invalid_retry")"; COMMIT_MSG="")
     done
 
     run_tests
 
     if [ "$DRY_RUN" == "y" ]; then
         # shellcheck disable=SC2031
-        echo_color "$GREEN" "Simulation : git commit -m '$COMMIT_MSG'"
+        echo_color "$GREEN" "$(get_string "commit_simulation" "$COMMIT_MSG")"
         # shellcheck disable=SC2031
         log_action "INFO" "Simul commit : $COMMIT_MSG"
     else
@@ -787,39 +861,39 @@ function rollback_commits() {
         return
     fi
 
-    echo_color "$RED" "Vous avez demandé un rollback des $ROLLBACK_COMMITS derniers commits."
+    echo_color "$RED" "$(get_string "rollback_prompt_info" "$ROLLBACK_COMMITS")"
     if [ "$CI_FRIENDLY" == "y" ]; then
         # En mode CI, on part direct sur un revert ou reset
-        echo_color "$YELLOW" "[CI] On effectue un revert des $ROLLBACK_COMMITS commits."
+        echo_color "$YELLOW" "$(get_string "rollback_ci_info" "$ROLLBACK_COMMITS")"
         if [ "$DRY_RUN" == "y" ]; then
-            echo_color "$GREEN" "Simulation : git revert HEAD~$((ROLLBACK_COMMITS-1))..HEAD"
+            echo_color "$GREEN" "$(get_string "rollback_simulation_revert" "$((ROLLBACK_COMMITS-1))")"
         else
             git revert --no-edit HEAD~$((ROLLBACK_COMMITS-1))..HEAD
         fi
         return
     fi
 
-    echo_color "$YELLOW" "Voulez-vous faire un revert (commit inverse) ou un reset (efface l'historique) ?"
-    echo "1) revert"
-    echo "2) reset --hard"
+    echo_color "$YELLOW" "$(get_string "rollback_prompt_which_type")"
+    echo "$(get_string "rollback_choice_revert")"
+    echo "$(get_string "rollback_choice_reset")"
     read -rp "> " ROLLBACK_CHOICE
     case "$ROLLBACK_CHOICE" in
         1)
             if [ "$DRY_RUN" == "y" ]; then
-                echo_color "$GREEN" "Simulation : git revert HEAD~$((ROLLBACK_COMMITS-1))..HEAD"
+                echo_color "$GREEN" "$(get_string "rollback_simulation_revert" "$((ROLLBACK_COMMITS-1))")"
             else
                 git revert --no-edit HEAD~$((ROLLBACK_COMMITS-1))..HEAD
             fi
             ;;
         2)
             if [ "$DRY_RUN" == "y" ]; then
-                echo_color "$GREEN" "Simulation : git reset --hard HEAD~$ROLLBACK_COMMITS"
+                echo_color "$GREEN" "$(get_string "rollback_simulation_reset" "$ROLLBACK_COMMITS")"
             else
                 git reset --hard HEAD~"$ROLLBACK_COMMITS"
             fi
             ;;
         *)
-            echo_color "$RED" "Annulé."
+            echo_color "$RED" "$(get_string "generic_cancelled")"
             ;;
     esac
 }
@@ -830,23 +904,23 @@ function cherry_pick_interactive() {
         return
     fi
 
-    echo_color "$BLUE" "Cherry-pick interactif :"
-    echo_color "$YELLOW" "Entrez le nom de la branche dont vous voulez cherry-pick un commit :"
+    echo_color "$BLUE" "$(get_string "cherry_pick_title")"
+    echo_color "$YELLOW" "$(get_string "cherry_pick_prompt_branch")"
     read -r SOURCE_BRANCH
 
     # Récupérer un log succinct
-    echo_color "$BLUE" "Commits disponibles dans '$SOURCE_BRANCH' (derniers 10) :"
+    echo_color "$BLUE" "$(get_string "cherry_pick_commits_available" "$SOURCE_BRANCH")"
     git fetch origin "$SOURCE_BRANCH"
     git log --oneline "origin/$SOURCE_BRANCH" -n 10
 
-    echo_color "$YELLOW" "Entrez le hash du commit à cherry-pick (7 premiers caractères suffisent) :"
+    echo_color "$YELLOW" "$(get_string "cherry_pick_prompt_hash")"
     read -r COMMIT_HASH
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : git cherry-pick $COMMIT_HASH"
+        echo_color "$GREEN" "$(get_string "cherry_pick_simulation" "$COMMIT_HASH")"
     else
         git cherry-pick "$COMMIT_HASH" || {
-            echo_color "$RED" "Conflit lors du cherry-pick ?"
+            echo_color "$RED" "$(get_string "cherry_pick_conflict")"
             check_for_conflicts
         }
     fi
@@ -858,7 +932,7 @@ function review_changes() {
         return
     fi
 
-    echo_color "$BLUE" "=== REVIEW DIFF AVANT PUSH ==="
+    echo_color "$BLUE" "$(get_string "review_title")"
     # Résumé
     git diff --stat
 
@@ -867,19 +941,19 @@ function review_changes() {
         return
     fi
 
-    echo_color "$YELLOW" "Afficher le diff complet ? (y/n)"
+    echo_color "$YELLOW" "$(get_string "review_prompt_full_diff" "$(get_string 'prompt_yes_no')")"
     read -r SHOW_DIFF
     if [ "$SHOW_DIFF" == "y" ]; then
         git diff --color | less -R
     fi
 
-    echo_color "$YELLOW" "Ouvrir un outil graphique (meld/kdiff3) ? (y/n)"
+    echo_color "$YELLOW" "$(get_string "review_prompt_graphical_tool" "$(get_string 'prompt_yes_no')")"
     read -r GRAPHICAL
     if [ "$GRAPHICAL" == "y" ]; then
         if command -v meld &>/dev/null; then
             meld .
         else
-            echo_color "$RED" "meld non installé, annulation."
+            echo_color "$RED" "$(get_string "review_meld_not_installed")"
         fi
     fi
 }
@@ -892,7 +966,7 @@ function auto_semver_bump() {
     if [ -z "$AUTO_VERSION_BUMP" ]; then
         return
     fi
-    echo_color "$BLUE" "=== Incrémentation sémantique : $AUTO_VERSION_BUMP ==="
+    echo_color "$BLUE" "$(get_string "semver_title" "$AUTO_VERSION_BUMP")"
 
     # Récupérer le dernier tag
     local last_tag
@@ -918,18 +992,18 @@ function auto_semver_bump() {
             patch=$((patch+1))
             ;;
         *)
-            echo_color "$RED" "Type de bump inconnu: $AUTO_VERSION_BUMP"
+            echo_color "$RED" "$(get_string "semver_unknown_bump_type" "$AUTO_VERSION_BUMP")"
             return
             ;;
     esac
     local new_tag="v${major}.${minor}.${patch}"
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : git tag -a $new_tag -m 'Auto semver bump' && git push origin $new_tag"
+        echo_color "$GREEN" "$(get_string "semver_simulation" "$new_tag" "$new_tag")"
     else
         git tag -a "$new_tag" -m "Auto semver bump"
         git push origin "$new_tag"
-        echo_color "$GREEN" "Nouveau tag sémantique créé : $new_tag"
+        echo_color "$GREEN" "$(get_string "semver_tag_created" "$new_tag")"
         # Optionnel : vous pourriez lancer create_release $new_tag "Nouvelle version"
     fi
 }
@@ -969,7 +1043,7 @@ function handle_branch() {
             branches+=("$line")
         done < <(git branch -r | sed 's/origin\///' | uniq)
 
-        PS3="Sélectionnez une branche : "
+        PS3="$(get_string "branch_select_prompt")"
         select BRANCH_NAME in "${branches[@]}"; do
             if [ -n "$BRANCH_NAME" ]; then
                 BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -980,7 +1054,7 @@ function handle_branch() {
                 fi
                 break
             else
-                echo_color "$RED" "Sélection invalide."
+                echo_color "$RED" "$(get_string "branch_invalid_selection")"
             fi
         done
     fi
@@ -988,34 +1062,34 @@ function handle_branch() {
 }
 
 function check_branch_status() {
-    echo_color "$BLUE" "Vérification de l'état de la branche '$BRANCH_NAME'..."
+    echo_color "$BLUE" "$(get_string "branch_status_checking" "$BRANCH_NAME")"
     git fetch origin "$BRANCH_NAME"
     LOCAL=$(git rev-parse "$BRANCH_NAME")
     REMOTE=$(git rev-parse "origin/$BRANCH_NAME")
     BASE=$(git merge-base "$BRANCH_NAME" "origin/$BRANCH_NAME")
 
     if [ "$LOCAL" == "$REMOTE" ]; then
-        echo_color "$GREEN" "La branche '$BRANCH_NAME' est à jour."
+        echo_color "$GREEN" "$(get_string "branch_status_up_to_date" "$BRANCH_NAME")"
     elif [ "$LOCAL" == "$BASE" ]; then
-        echo_color "$YELLOW" "La branche '$BRANCH_NAME' est en retard."
+        echo_color "$YELLOW" "$(get_string "branch_status_behind" "$BRANCH_NAME")"
     elif [ "$REMOTE" == "$BASE" ]; then
-        echo_color "$YELLOW" "La branche '$BRANCH_NAME' est en avance."
+        echo_color "$YELLOW" "$(get_string "branch_status_ahead" "$BRANCH_NAME")"
     else
-        echo_color "$RED" "La branche '$BRANCH_NAME' et la branche distante ont divergé."
-        echo_color "$YELLOW" "Voulez-vous fusionner la branche distante dans la branche locale ? (y/n)"
+        echo_color "$RED" "$(get_string "branch_status_diverged" "$BRANCH_NAME")"
+        echo_color "$YELLOW" "$(get_string "branch_merge_remote_prompt" "$(get_string 'prompt_yes_no')")"
         read -r MERGE_REMOTE
         if [ "$MERGE_REMOTE" == "y" ]; then
             if [ "$DRY_RUN" == "y" ]; then
                 echo_color "$GREEN" "Simulation : git merge 'origin/$BRANCH_NAME'"
             else
                 git merge "origin/$BRANCH_NAME" || {
-                    echo_color "$RED" "Erreur lors de la fusion."
+                    echo_color "$RED" "$(get_string "branch_merge_error")"
                     check_for_conflicts
                     return 1
                 }
             fi
         else
-            echo_color "$RED" "Opération annulée."
+            echo_color "$RED" "$(get_string "generic_cancelled")"
             return 1
         fi
     fi
@@ -1023,30 +1097,30 @@ function check_branch_status() {
 
 function check_for_conflicts() {
     if git ls-files -u | grep -q .; then
-        echo_color "$RED" "Des conflits de fusion détectés."
+        echo_color "$RED" "$(get_string "conflict_detected")"
         if [ "$AUTO_CONFLICT_RES" == "y" ]; then
             # AJOUT: Tentative de résolution auto des conflits (exemple)
-            echo_color "$YELLOW" "Tentative de résolution automatique des conflits avec 'git mergetool'..."
+            echo_color "$YELLOW" "$(get_string "conflict_auto_resolve_attempt")"
             if [ "$DRY_RUN" == "y" ]; then
                 echo_color "$GREEN" "Simulation : git mergetool --tool=meld"
             else
                 git mergetool --tool=meld
                 git add -A
-                git commit -m "Résolution automatique des conflits"
+                git commit -m "$(get_string "conflict_auto_resolve_commit_msg")"
             fi
         else
-            echo_color "$YELLOW" "Voulez-vous les résoudre maintenant ? (y/n)"
+            echo_color "$YELLOW" "$(get_string "conflict_manual_resolve_prompt" "$(get_string 'prompt_yes_no')")"
             read -r RESOLVE_CONFLICTS
             if [ "$RESOLVE_CONFLICTS" == "y" ]; then
                 conflicted_files=$(git diff --name-only --diff-filter=U)
                 for file in $conflicted_files; do
-                    echo_color "$YELLOW" "Résoudre le conflit dans : $file"
+                    echo_color "$YELLOW" "$(get_string "conflict_manual_resolve_file" "$file")"
                     ${EDITOR:-nano} "$file"
                     git add "$file"
                 done
-                git commit -m "Résolution des conflits"
+                git commit -m "$(get_string "conflict_manual_resolve_commit_msg")"
             else
-                echo_color "$RED" "Opération annulée en raison de conflits non résolus."
+                echo_color "$RED" "$(get_string "conflict_unresolved_error")"
                 return 1
             fi
         fi
@@ -1055,7 +1129,7 @@ function check_for_conflicts() {
 
 function stash_changes() {
     if [ -n "$(git status --porcelain)" ]; then
-        echo_color "$YELLOW" "Modifs locales détectées. Stasher ? (y/n)"
+        echo_color "$YELLOW" "$(get_string "stash_prompt" "$(get_string 'prompt_yes_no')")"
         read -r STASH_ANSWER
         if [ "$STASH_ANSWER" == "y" ]; then
             if [ "$DRY_RUN" == "y" ]; then
@@ -1069,7 +1143,7 @@ function stash_changes() {
 
 function unstash_changes() {
     if git stash list | grep -q .; then
-        echo_color "$YELLOW" "Appliquer les stash ? (y/n)"
+        echo_color "$YELLOW" "$(get_string "unstash_prompt" "$(get_string 'prompt_yes_no')")"
         read -r UNSTASH_ANSWER
         if [ "$UNSTASH_ANSWER" == "y" ]; then
             if [ "$DRY_RUN" == "y" ]; then
@@ -1085,25 +1159,25 @@ function unstash_changes() {
 # PULL : Mettre à jour la branche locale avec les modifications de la branche distante
 function perform_pull() {
     if [ "$DO_PULL" == "y" ]; then
-        echo_color "$YELLOW" "Exécuter git pull..."
+        echo_color "$YELLOW" "$(get_string "pull_running")"
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : git pull origin '$BRANCH_NAME'"
         else
             git pull origin "$BRANCH_NAME" || {
-                echo_color "$RED" "Erreur lors du pull."
+                echo_color "$RED" "$(get_string "pull_error")"
                 check_for_conflicts
                 return 1
             }
         fi
     else
-        echo_color "$YELLOW" "Voulez-vous faire un pull ? (y/n)"
+        echo_color "$YELLOW" "$(get_string "pull_prompt" "$(get_string 'prompt_yes_no')")"
         read -r PULL_ANSWER
         if [ "$PULL_ANSWER" == "y" ]; then
             if [ "$DRY_RUN" == "y" ]; then
                 echo_color "$GREEN" "Simulation : git pull origin '$BRANCH_NAME'"
             else
                 git pull origin "$BRANCH_NAME" || {
-                    echo_color "$RED" "Erreur lors du pull."
+                    echo_color "$RED" "$(get_string "pull_error")"
                     check_for_conflicts
                     return 1
                 }
@@ -1115,27 +1189,27 @@ function perform_pull() {
 # MERGE : Fusionner une branche dans la branche courante avant le push
 function perform_merge() {
     if [ "$DO_MERGE" == "y" ]; then
-        echo_color "$YELLOW" "Merge de '$MERGE_BRANCH'..."
+        echo_color "$YELLOW" "$(get_string "merge_running" "$MERGE_BRANCH")"
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : git merge '$MERGE_BRANCH'"
         else
             git merge "$MERGE_BRANCH" || {
-                echo_color "$RED" "Erreur lors du merge."
+                echo_color "$RED" "$(get_string "merge_error")"
                 check_for_conflicts
                 return 1
             }
         fi
     else
-        echo_color "$YELLOW" "Voulez-vous merger une autre branche ? (y/n)"
+        echo_color "$YELLOW" "$(get_string "merge_prompt_another_branch" "$(get_string 'prompt_yes_no')")"
         read -r MERGE_ANSWER
         if [ "$MERGE_ANSWER" == "y" ]; then
-            echo_color "$YELLOW" "Entrez le nom de la branche à merger :"
+            echo_color "$YELLOW" "$(get_string "merge_prompt_branch_name")"
             read -r MERGE_BRANCH
             if [ "$DRY_RUN" == "y" ]; then
                 echo_color "$GREEN" "Simulation : git merge '$MERGE_BRANCH'"
             else
                 git merge "$MERGE_BRANCH" || {
-                    echo_color "$RED" "Erreur lors du merge."
+                    echo_color "$RED" "$(get_string "merge_error")"
                     check_for_conflicts
                     return 1
                 }
@@ -1151,13 +1225,13 @@ function perform_merge() {
 function perform_rebase() {
     # AJOUT: Rebase sur une branche donnée avant le push
     if [ -n "$REBASE_BRANCH" ]; then
-        echo_color "$YELLOW" "Rebase sur la branche '$REBASE_BRANCH'..."
+        echo_color "$YELLOW" "$(get_string "rebase_running" "$REBASE_BRANCH")"
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : git rebase '$REBASE_BRANCH'"
         else
             git fetch origin "$REBASE_BRANCH"
             git rebase "origin/$REBASE_BRANCH" || {
-                echo_color "$RED" "Erreur lors du rebase."
+                echo_color "$RED" "$(get_string "rebase_error")"
                 check_for_conflicts
                 return 1
             }
@@ -1173,7 +1247,7 @@ function secure_push() {
     if command -v git-secrets &>/dev/null; then
         git-secrets --scan
         if [ $? -ne 0 ]; then
-            echo_color "$RED" "Secrets détectés, push annulé."
+            echo_color "$RED" "$(get_string "secure_push_secrets_detected")"
             exit 1
         fi
     fi
@@ -1184,13 +1258,13 @@ function perform_push() {
     secure_push
     while true; do
         echo ""
-        echo -n "Pousser sur '$BRANCH_NAME' ? (y/n) "
+        echo -n "$(get_string "push_prompt" "$BRANCH_NAME" "$(get_string 'prompt_yes_no')") "
         # shellcheck disable=SC2162
         read CONFIRM_PUSH
         case "$CONFIRM_PUSH" in
             y|Y) break ;;
-            n|N) echo_color "$RED" "Opération annulée."; return 1 ;;
-            *) echo_color "$RED" "Réponse invalide." ;;
+            n|N) echo_color "$RED" "$(get_string "generic_cancelled")"; return 1 ;;
+            *) echo_color "$RED" "$(get_string "push_invalid_answer")" ;;
         esac
     done
 
@@ -1198,7 +1272,7 @@ function perform_push() {
         echo_color "$GREEN" "Simulation : git push origin '$BRANCH_NAME'"
     else
         git push origin "$BRANCH_NAME" || {
-            echo_color "$RED" "Erreur lors du push."
+            echo_color "$RED" "$(get_string "push_error")"
             return 1
         }
     fi
@@ -1211,7 +1285,7 @@ function perform_push() {
             git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
             git push origin "$TAG_NAME"
         fi
-        echo_color "$GREEN" "Tag '$TAG_NAME' créé et poussé."
+        echo_color "$GREEN" "$(get_string "push_tag_success" "$TAG_NAME")"
     fi
 
     # Préparation des variables pour la création de la release GitLab (si nécessaire)
@@ -1242,7 +1316,7 @@ function perform_push() {
         # Déjà HTTPS
         web_repo_url=${repo_url%.git}
     else
-        echo_color "$RED" "Format d'URL du dépôt non supporté : $repo_url"
+        echo_color "$RED" "$(get_string "push_unsupported_repo_url" "$repo_url")"
         log_action "ERROR" "Format d'URL du dépôt non supporté : $repo_url"
         # On ne bloque pas ici, mais pas de création de release si URL non supportée.
     fi
@@ -1274,15 +1348,15 @@ function perform_push() {
         body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
         if [ "$http_status" -eq 201 ]; then
-            echo_color "$GREEN" "Release GitLab créée avec succès pour le tag $TAG_NAME."
+            echo_color "$GREEN" "$(get_string "push_release_success" "$TAG_NAME")"
             log_action "INFO" "Release GitLab créée avec succès."
         else
-            echo_color "$RED" "Erreur lors de la création de la release GitLab. Statut HTTP : $http_status"
+            echo_color "$RED" "$(get_string "push_release_error" "$http_status")"
             echo_color "$RED" "Réponse : $body"
             log_action "ERROR" "Erreur lors de la création de la release GitLab. Statut : $http_status, Réponse : $body"
         fi
     else
-        log_action "INFO" "Pas de création de release GitLab (TAG_NAME, GITLAB_PROJECT_ID, GITLAB_TOKEN manquants ou DRY_RUN activé)."
+        log_action "INFO" "$(get_string "push_no_release")"
     fi
 
     # Envoi des notifications
@@ -1296,9 +1370,9 @@ function perform_push() {
 
     # Message final
     if [ "$DRY_RUN" != "y" ]; then
-        echo_color "$GREEN" "Poussée réussie sur '$BRANCH_NAME'."
+        echo_color "$GREEN" "$(get_string "push_success" "$BRANCH_NAME")"
     else
-        echo_color "$GREEN" "Simulation de push réussie."
+        echo_color "$GREEN" "$(get_string "push_simulation_success")"
     fi
 }
 
@@ -1393,16 +1467,16 @@ function handle_multiple_repositories() {
         for dir in "$repo_dir"/*/; do
             if [ -d "${dir}.git" ]; then
                 (
-                    echo_color "$BLUE" "Début des opérations sur le dépôt dans $dir"
+                    echo_color "$BLUE" "$(get_string "multi_repo_start" "$dir")"
                     log_action "INFO" "Opérations sur le dépôt dans $dir"
-                    cd "$dir" || { echo_color "$RED" "Erreur : Impossible de cd vers $dir"; exit 1; }
+                    cd "$dir" || { echo_color "$RED" "$(get_string "multi_repo_cd_error" "$dir")"; exit 1; }
                     main_without_repo_dir "$@"
                 ) &
             fi
         done
         wait
     else
-        echo_color "$RED" "Le répertoire spécifié n'existe pas : $repo_dir"
+        echo_color "$RED" "$(get_string "multi_repo_dir_not_found" "$repo_dir")"
         log_action "ERROR" "Le répertoire spécifié n'existe pas : $repo_dir"
         exit 1
     fi
@@ -1414,7 +1488,7 @@ function handle_multiple_repositories() {
 # On extrait plus d’infos, par exemple le nombre de commits par type, le top 3 des auteurs, etc.
 ###############################################################################
 function generate_commit_stats() {
-    echo_color "$BLUE" "Génération de statistiques de commits..."
+    echo_color "$BLUE" "$(get_string "stats_generating")"
 
     # Créer le répertoire stats s'il n'existe pas
     mkdir -p stats
@@ -1437,7 +1511,7 @@ function generate_commit_stats() {
     done
 
     log_action "INFO" "Statistiques de commits générées dans $stats_file"
-    echo_color "$GREEN" "Statistiques de commits générées dans $stats_file"
+    echo_color "$GREEN" "$(get_string "stats_finished" "$stats_file")"
 }
 
 ###############################################################################
@@ -1446,21 +1520,21 @@ function generate_commit_stats() {
 ###############################################################################
 function run_quality_checks() {
     if [ -n "$QUALITY_COMMAND" ]; then
-        echo_color "$YELLOW" "Exécution des vérifications qualité via : $QUALITY_COMMAND"
+        echo_color "$YELLOW" "$(get_string "quality_running" "$QUALITY_COMMAND")"
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : $QUALITY_COMMAND"
         else
             # Vérifier si l'outil de qualité (par ex: npm) est dispo
             if ! command -v npm &>/dev/null; then
-                echo_color "$RED" "npm non installé, impossible de lancer 'npm run lint'. Saut de la vérification."
+                echo_color "$RED" "$(get_string "quality_npm_missing")"
                 log_action "WARN" "npm non dispo, saut lint."
             else
                 if ! $QUALITY_COMMAND; then
-                    echo_color "$RED" "Vérifications qualité échouées. Annulation."
+                    echo_color "$RED" "$(get_string "quality_failed")"
                     log_action "ERROR" "Echec qualité."
                     exit 1
                 else
-                    echo_color "$GREEN" "Qualité OK."
+                    echo_color "$GREEN" "$(get_string "quality_ok")"
                     log_action "INFO" "Qualité OK."
                 fi
             fi
@@ -1476,11 +1550,11 @@ function run_quality_checks() {
             npm audit --audit-level=moderate
             # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
-                echo_color "$RED" "Audit sécurité échoué (npm audit). Annulation."
+                echo_color "$RED" "$(get_string "quality_audit_failed")"
                 log_action "ERROR" "Audit sécurité fail."
                 exit 1
             fi
-            echo_color "$GREEN" "Audit npm OK."
+            echo_color "$GREEN" "$(get_string "quality_audit_ok")"
             log_action "INFO" "Audit npm OK."
         fi
     fi
@@ -1493,15 +1567,15 @@ function run_quality_checks() {
             git-secrets --scan
             # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
-                echo_color "$RED" "git-secrets a détecté des secrets ! Annulation."
+                echo_color "$RED" "$(get_string "quality_secrets_detected")"
                 log_action "ERROR" "Secrets détectés."
                 exit 1
             fi
-            echo_color "$GREEN" "Aucun secret détecté (git-secrets)."
+            echo_color "$GREEN" "$(get_string "quality_secrets_ok")"
             log_action "INFO" "Aucun secret."
         fi
     else
-        echo_color "$YELLOW" "git-secrets non installé, saut de cette vérification."
+        echo_color "$YELLOW" "$(get_string "quality_secrets_missing")"
         log_action "WARN" "git-secrets absent."
     fi
 
@@ -1513,15 +1587,15 @@ function run_quality_checks() {
             bandit -r .
             # shellcheck disable=SC2181
             if [ $? -ne 0 ]; then
-                echo_color "$RED" "Analyse bandit échouée (problèmes de sécurité Python). Annulation."
+                echo_color "$RED" "$(get_string "quality_bandit_failed")"
                 log_action "ERROR" "Bandit fail."
                 exit 1
             fi
-            echo_color "$GREEN" "Analyse bandit OK (pas de vulnérabilités Python graves)."
+            echo_color "$GREEN" "$(get_string "quality_bandit_ok")"
             log_action "INFO" "Bandit OK."
         fi
     else
-        echo_color "$YELLOW" "bandit non installé ou pas de requirements.txt, saut de l'analyse Python."
+        echo_color "$YELLOW" "$(get_string "quality_bandit_missing")"
         log_action "WARN" "bandit absent ou pas de code Python."
     fi
 }
@@ -1531,13 +1605,13 @@ function run_quality_checks() {
 # On va afficher un diff plus complet, éventuellement lister les commits en plus sur l’autre branche.
 ###############################################################################
 function compare_branches() {
-    echo_color "$YELLOW" "Comparaison de '$BRANCH_NAME' avec '$COMPARE_BRANCH'..."
+    echo_color "$YELLOW" "$(get_string "compare_running" "$BRANCH_NAME" "$COMPARE_BRANCH")"
     if [ "$DRY_RUN" == "y" ]; then
         echo_color "$GREEN" "Simulation : git log $BRANCH_NAME..$COMPARE_BRANCH --oneline"
     else
-        echo_color "$BLUE" "Commits dans $COMPARE_BRANCH non présents dans $BRANCH_NAME:"
+        echo_color "$BLUE" "$(get_string "compare_commits_in_other" "$COMPARE_BRANCH")"
         git log --oneline "$BRANCH_NAME..$COMPARE_BRANCH"
-        echo_color "$BLUE" "Diff entre les deux branches:"
+        echo_color "$BLUE" "$(get_string "compare_diff_title")"
         git diff "$BRANCH_NAME..$COMPARE_BRANCH"
     fi
     log_action "INFO" "Comparaison effectuée."
@@ -1550,7 +1624,7 @@ function compare_branches() {
 function export_patches() {
     # Utiliser PATCH_COUNT si défini, sinon défaut à 3
     local count=${PATCH_COUNT:-3}
-    echo_color "$YELLOW" "Export de $count commits en patches dans le répertoire './patches'."
+    echo_color "$YELLOW" "$(get_string "patch_exporting" "$count")"
 
     # Créer le répertoire patches s'il n'existe pas
     mkdir -p "./patches"
@@ -1559,7 +1633,7 @@ function export_patches() {
         echo_color "$GREEN" "Simulation : git format-patch -$count HEAD -o ./patches"
     else
         git format-patch -"$count" HEAD -o ./patches
-        echo_color "$GREEN" "Patches créés dans ./patches."
+        echo_color "$GREEN" "$(get_string "patch_finished")"
     fi
     log_action "INFO" "$count patches exportés dans ./patches."
 }
@@ -1570,17 +1644,17 @@ function export_patches() {
 ###############################################################################
 function trigger_ci() {
     if [ -n "$CI_TRIGGER_URL" ]; then
-        echo_color "$YELLOW" "Déclenchement du pipeline CI..."
+        echo_color "$YELLOW" "$(get_string "ci_triggering")"
         if [ "$DRY_RUN" == "y" ]; then
             echo_color "$GREEN" "Simulation : curl -X POST $CI_TRIGGER_URL"
         else
             # Possibilité d'envoyer un token avec --header "CI-Token: ..."
             response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CI_TRIGGER_URL")
             if [ "$response" != "200" ]; then
-                echo_color "$RED" "Échec du déclenchement CI (HTTP $response)."
+                echo_color "$RED" "$(get_string "ci_trigger_failed" "$response")"
                 log_action "ERROR" "CI fail."
             else
-                echo_color "$GREEN" "Pipeline CI déclenché avec succès."
+                echo_color "$GREEN" "$(get_string "ci_trigger_success")"
                 log_action "INFO" "CI déclenchée."
             fi
         fi
@@ -1603,13 +1677,13 @@ function log_release() {
 # Fonction avancée: lister les branches déjà mergées dans main ou master, proposer de les supprimer.
 ###############################################################################
 function cleanup_branches() {
-    echo_color "$YELLOW" "Nettoyage des branches locales fusionnées..."
+    echo_color "$YELLOW" "$(get_string "cleanup_running")"
     local main_branch="main"
     # shellcheck disable=SC2162
     git branch | grep -v "$main_branch" | while read b; do
         # Vérifier si fusionnée
         git branch --merged $main_branch | grep -q " $b$" && {
-            echo_color "$BLUE" "Branch $b est fusionnée, suppression ? (y/n)"
+            echo_color "$BLUE" "$(get_string "cleanup_prompt" "$b" "$(get_string 'prompt_yes_no')")"
             read -r DEL_ANSWER
             if [ "$DEL_ANSWER" == "y" ]; then
                 if [ "$DRY_RUN" == "y" ]; then
@@ -1625,21 +1699,30 @@ function cleanup_branches() {
 
 function default_actions_sequence() {
     local actions=("backup_files" "add_files" "create_commit" "handle_branch" "stash_changes" "perform_pull" "perform_rebase" "check_branch_status" "perform_merge" "perform_push" "unstash_changes")
-    local action_names=("Sauvegarder les fichiers" "Ajouter des fichiers" "Créer un commit" "Gérer les branches" "Cacher les modifications locales" "Effectuer un pull" "Rebase" "Vérifier l'état de la branche" "Effectuer un merge" "Effectuer un push" "Appliquer modifications sauvegardées")
+    local action_names=(
+        "$(get_string "menu_item_1" | sed 's/1. //')"
+        "$(get_string "menu_item_2" | sed 's/2. //')"
+        "$(get_string "menu_item_3" | sed 's/3. //')"
+        "$(get_string "menu_item_4" | sed 's/4. //')"
+        "$(get_string "menu_item_5" | sed 's/5. //')"
+        "$(get_string "menu_item_6" | sed 's/6. //')"
+        "$(get_string "menu_item_7" | sed 's/7. //')"
+        "$(get_string "menu_item_8" | sed 's/8. //')"
+    )
     local total_actions=${#actions[@]}
     local current_action=0
 
     while [ "$current_action" -lt "$total_actions" ]; do
         display_header
-        echo_color "$GREEN" "Action par défaut : ${action_names[$current_action]}"
-        echo_color "$YELLOW" "Appuyez sur Entrée pour exécuter ou 'n' pour le menu"
+        echo_color "$GREEN" "$(get_string "sequence_action_title" "${action_names[$current_action]}")"
+        echo_color "$YELLOW" "$(get_string "sequence_prompt")"
         read -rp "> " user_choice
 
         if [ -z "$user_choice" ]; then
             ${actions[$current_action]}
             action_status=$?
             if [ $action_status -ne 0 ]; then
-                echo_color "$RED" "Erreur lors de '${action_names[$current_action]}'. Réessayer ? (y/n)"
+                echo_color "$RED" "$(get_string "sequence_error_retry" "${action_names[$current_action]}" "$(get_string 'prompt_yes_no')")"
                 read -rp "> " retry_choice
                 if [ "$retry_choice" == "y" ]; then
                     continue
@@ -1654,13 +1737,13 @@ function default_actions_sequence() {
             main_menu "$current_action"
             break
         else
-            echo_color "$RED" "Option invalide."
+            echo_color "$RED" "$(get_string "sequence_invalid_option")"
         fi
     done
 }
 
 function main_without_repo_dir() {
-    echo_color "$GREEN" "Début opérations sur dépôt courant."
+    echo_color "$GREEN" "$(get_string "main_repo_operations_starting")"
     check_git_repo || exit 1
     check_user_email || exit 1
 
@@ -1668,7 +1751,7 @@ function main_without_repo_dir() {
     rollback_commits
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$YELLOW" "Simulation activée."
+        echo_color "$YELLOW" "$(get_string "dry_run_activated")"
     fi
 
     # 2) Gérer les hooks si besoin
@@ -1720,17 +1803,17 @@ function main_menu() {
     local current_action=$1
     while true; do
         display_header
-        echo_color "$YELLOW" "Menu principal :"
-        echo_color "$BLUE" "1. Sauvegarder les fichiers"
-        echo_color "$BLUE" "2. Ajouter des fichiers"
-        echo_color "$BLUE" "3. Créer un commit"
-        echo_color "$BLUE" "4. Gérer les branches"
-        echo_color "$BLUE" "5. Effectuer un pull"
-        echo_color "$BLUE" "6. Effectuer un merge"
-        echo_color "$BLUE" "7. Effectuer un push"
-        echo_color "$BLUE" "8. Quitter"
+        echo_color "$YELLOW" "$(get_string "menu_title")"
+        echo_color "$BLUE" "$(get_string "menu_item_1")"
+        echo_color "$BLUE" "$(get_string "menu_item_2")"
+        echo_color "$BLUE" "$(get_string "menu_item_3")"
+        echo_color "$BLUE" "$(get_string "menu_item_4")"
+        echo_color "$BLUE" "$(get_string "menu_item_5")"
+        echo_color "$BLUE" "$(get_string "menu_item_6")"
+        echo_color "$BLUE" "$(get_string "menu_item_7")"
+        echo_color "$BLUE" "$(get_string "menu_item_8")"
         echo ""
-        echo_color "$YELLOW" "Entrée: Continuer la séquence"
+        echo_color "$YELLOW" "$(get_string "sequence_prompt")"
         read -rp "> " CHOICE
 
         if [ -z "$CHOICE" ]; then
@@ -1747,13 +1830,13 @@ function main_menu() {
             6) perform_merge ;;
             7) perform_push ;;
             8)
-                echo_color "$GREEN" "Merci d'avoir utilisé ce script !"
+                echo_color "$GREEN" "$(get_string "menu_exit_message")"
                 exit 0
                 ;;
-            *) echo_color "$RED" "Option invalide." ;;
+            *) echo_color "$RED" "$(get_string "sequence_invalid_option")" ;;
         esac
 
-        echo_color "$YELLOW" "Revenir à la séquence par défaut ? (y/n)"
+        echo_color "$YELLOW" "$(get_string "menu_return_to_sequence_prompt" "$(get_string 'prompt_yes_no')")"
         read -rp "> " return_choice
         if [ "$return_choice" == "y" ]; then
             default_actions_sequence "$current_action"
@@ -1778,13 +1861,13 @@ function collect_feedback() {
         cleanup_branches
     fi
 
-    echo_color "$YELLOW" "Des commentaires sur le script ? (y/n)"
+    echo_color "$YELLOW" "$(get_string "feedback_prompt" "$(get_string 'prompt_yes_no')")"
     read -r FEEDBACK_RESPONSE
     if [ "$FEEDBACK_RESPONSE" == "y" ]; then
-        echo_color "$YELLOW" "Entrez vos commentaires :"
+        echo_color "$YELLOW" "$(get_string "feedback_prompt_comment")"
         read -r USER_FEEDBACK
         echo "$(date '+%Y-%m-%d %H:%M:%S') : $USER_FEEDBACK" >> feedback.log
-        echo_color "$GREEN" "Merci pour votre feedback !"
+        echo_color "$GREEN" "$(get_string "feedback_thanks")"
         log_action "INFO" "Feedback collecté."
     fi
 }
@@ -1793,13 +1876,18 @@ function collect_feedback() {
 # MAIN
 ###############################################################################
 function main() {
-    echo_color "$BLUE$BOLD" "Lancement du script (Version $SCRIPT_VERSION)."
-    log_action "INFO" "Démarrage du script v$SCRIPT_VERSION"
+    # Load config and language first. This is safe because the config
+    # file path is not a configurable option.
+    load_config
+    init_logging
 
+    # Now process options, which may call usage() and needs the language loaded.
     process_options "$@"
+
+    echo_color "$BLUE$BOLD" "$(get_string "main_start" "$SCRIPT_VERSION")"
+    log_action "INFO" "Démarrage du script v$SCRIPT_VERSION"
     log_action "INFO" "Options : $*"
 
-    load_config
     check_dependencies
     check_permissions
 
@@ -1824,9 +1912,9 @@ function main() {
 
     # -- Indications post-push ou simulation --
     if [ "$DRY_RUN" != "y" ]; then
-        echo_color "$GREEN" "Vérifiez la plateforme distante pour les modifications."
+        echo_color "$GREEN" "$(get_string "main_post_push_check_remote")"
     else
-        echo_color "$YELLOW" "Simulation terminée, aucune modification réelle."
+        echo_color "$YELLOW" "$(get_string "main_post_push_simulation_finished")"
     fi
 
     # -- Collecte éventuelle de feedback --

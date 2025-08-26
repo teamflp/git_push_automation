@@ -13,7 +13,7 @@ function link_tickets() {
 
         # Si TICKET_BASE_URL n'est pas défini, on ne peut pas construire d'URL
         if [ -z "$TICKET_BASE_URL" ]; then
-            echo_color "$YELLOW" "Aucun TICKET_BASE_URL n'est défini dans .env, impossible de construire le lien vers le ticket."
+            echo_color "$YELLOW" "$(get_string "jira_no_base_url")"
             log_action "WARN" "TICKET_BASE_URL manquant: l'ID $ticket_id ne sera pas lié."
         else
             # Concatène l'URL de base avec l'ID du ticket

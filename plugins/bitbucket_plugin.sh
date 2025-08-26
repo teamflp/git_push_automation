@@ -12,7 +12,7 @@ function notify_bitbucket() {
     fi
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : Notification Bitbucket (ajout d'un commentaire sur le commit $commit_hash)."
+        echo_color "$GREEN" "$(get_string "bitbucket_notif_sim" "$commit_hash")"
         echo "Message : $message"
         return
     fi
@@ -33,10 +33,10 @@ function notify_bitbucket() {
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
-        echo_color "$GREEN" "Notification Bitbucket envoyée."
+        echo_color "$GREEN" "$(get_string "bitbucket_notif_success")"
         log_action "INFO" "Notification Bitbucket OK"
     else
-        echo_color "$RED" "Erreur notif Bitbucket: HTTP $http_status"
+        echo_color "$RED" "$(get_string "bitbucket_notif_error" "$http_status")"
         echo_color "$RED" "Réponse : $body"
         log_action "ERROR" "Bitbucket notif fail $http_status $body"
     fi
@@ -58,7 +58,7 @@ function create_bitbucket_release() {
     commit_hash=$(git rev-parse HEAD)
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : Création de 'release' Bitbucket en créant un tag '$tag_name'."
+        echo_color "$GREEN" "$(get_string "bitbucket_release_sim" "$tag_name")"
         echo "Description : $description"
         return
     fi
@@ -88,10 +88,10 @@ function create_bitbucket_release() {
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
-        echo_color "$GREEN" "Tag '$tag_name' créé sur Bitbucket (équivalent 'release')."
+        echo_color "$GREEN" "$(get_string "bitbucket_release_success" "$tag_name")"
         log_action "INFO" "Bitbucket tag/release OK"
     else
-        echo_color "$RED" "Erreur création tag Bitbucket: HTTP $http_status"
+        echo_color "$RED" "$(get_string "bitbucket_release_error" "$http_status")"
         echo_color "$RED" "Réponse : $body"
         log_action "ERROR" "Bitbucket release fail $http_status $body"
     fi
