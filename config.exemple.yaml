@@ -2,6 +2,10 @@
 # CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT (Format YAML)
 ########################################################################################
 
+# Langue du script. Options: "fr" (français), "en" (anglais).
+# Si non spécifié, la valeur par défaut est "fr".
+language: "fr"
+
 # Paramétrage Slack
 slack:
   webhook_url: "https://hooks.slack.com/services/T0XXXXXXXXX/xxxxxxxxxxxxxxxxxxxxxxxx"  # Exemple

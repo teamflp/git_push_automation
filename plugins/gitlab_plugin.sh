@@ -6,20 +6,20 @@ function create_gitlab_mr() {
         return
     fi
     if [ "$PLATFORM" != "gitlab" ]; then
-        echo_color "$RED" "PLATFORM != gitlab, impossible de créer MR."
+        echo_color "$RED" "$(get_string "gitlab_mr_not_gitlab_platform")"
         return
     fi
 
-    echo_color "$BLUE" "=== Création Merge Request GitLab ==="
+    echo_color "$BLUE" "$(get_string "gitlab_mr_title")"
     if [ -z "$GITLAB_PROJECT_ID" ] || [ -z "$GITLAB_TOKEN" ]; then
-        echo_color "$RED" "GITLAB_PROJECT_ID ou GITLAB_TOKEN manquant"
+        echo_color "$RED" "$(get_string "gitlab_mr_missing_vars")"
         return
     fi
 
     # On suppose qu'on veut merger la branche $BRANCH_NAME dans 'main'
     local base_branch="main"
-    local mr_title="MR depuis script"
-    local mr_description="Auto-created Merge Request via git_push_automation.sh"
+    local mr_title; mr_title=$(get_string "gitlab_mr_default_title")
+    local mr_description; mr_description=$(get_string "gitlab_mr_default_desc")
 
     local payload
     payload=$(jq -n \
@@ -37,7 +37,7 @@ function create_gitlab_mr() {
     )
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : curl POST MR"
+        echo_color "$GREEN" "$(get_string "gitlab_mr_sim")"
         echo "$payload"
     else
         response=$(curl --silent --write-out "HTTPSTATUS:%{http_code}" \
@@ -50,10 +50,10 @@ function create_gitlab_mr() {
         # shellcheck disable=SC2001
         body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
         if [ "$http_status" -ne 201 ]; then
-            echo_color "$RED" "Erreur création MR GitLab (HTTP $http_status)"
+            echo_color "$RED" "$(get_string "gitlab_mr_error" "$http_status")"
             echo_color "$RED" "Réponse : $body"
         else
-            echo_color "$GREEN" "Merge Request créée sur GitLab."
+            echo_color "$GREEN" "$(get_string "gitlab_mr_success")"
         fi
     fi
 }
@@ -79,11 +79,11 @@ function notify_gitlab() {
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -ne 201 ]; then
-        echo_color "$RED" "Erreur notif GitLab HTTP:$http_status"
+        echo_color "$RED" "$(get_string "gitlab_notif_error" "$http_status")"
         echo_color "$RED" "Réponse: $body"
         log_action "ERROR" "GitLab notif fail $http_status $body"
     else
-        echo_color "$GREEN" "Notif GitLab OK."
+        echo_color "$GREEN" "$(get_string "gitlab_notif_success")"
         log_action "INFO" "Notif GitLab OK"
     fi
 }
@@ -107,10 +107,10 @@ function create_gitlab_release() {
     body=$(echo "$response" | sed -e 's/HTTPSTATUS\:.*//g')
 
     if [ "$http_status" -eq 201 ]; then
-        echo_color "$GREEN" "Release GitLab créée."
+        echo_color "$GREEN" "$(get_string "gitlab_release_success")"
         log_action "INFO" "Release GitLab OK"
     else
-        echo_color "$RED" "Erreur release GitLab:$http_status"
+        echo_color "$RED" "$(get_string "gitlab_release_error" "$http_status")"
         echo_color "$RED" "Réponse: $body"
         log_action "ERROR" "GitLab release fail $http_status $body"
     fi

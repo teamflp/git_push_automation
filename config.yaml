@@ -1,8 +1,5 @@
-# Configuration YAML pour git_push_automation
-
+language: "en"
 SILENT_INSTALL: 1
-
-# Plateforme Git courante (gitlab, github, bitbucket)
 platforms:
   current_platform: "github"
   github:

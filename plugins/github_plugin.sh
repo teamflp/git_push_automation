@@ -6,23 +6,23 @@ function create_github_pr() {
         return
     fi
     if [ "$PLATFORM" != "github" ]; then
-        echo_color "$RED" "PLATFORM != github, impossible de créer PR."
+        echo_color "$RED" "$(get_string "github_pr_not_github_platform")"
         return
     fi
 
-    echo_color "$BLUE" "=== Création Pull Request GitHub ==="
+    echo_color "$BLUE" "$(get_string "github_pr_title")"
     local base_branch="main"  # ou la branch par défaut
     if [ -n "$MAIN_BRANCH" ]; then
         base_branch="$MAIN_BRANCH"
     fi
 
     if ! command -v gh &>/dev/null; then
-        echo_color "$RED" "L'outil GitHub CLI (gh) n'est pas installé."
+        echo_color "$RED" "$(get_string "github_pr_gh_missing")"
         return
     fi
 
     if [ "$DRY_RUN" == "y" ]; then
-        echo_color "$GREEN" "Simulation : gh pr create --base $base_branch --head $BRANCH_NAME --title 'PR depuis script' --body 'Auto-created PR'"
+        echo_color "$GREEN" "$(get_string "github_pr_sim" "$base_branch" "$BRANCH_NAME")"
     else
         gh pr create --base "$base_branch" --head "$BRANCH_NAME" --title "PR depuis script" --body "Auto-created PR via git_push_automation.sh"
     fi

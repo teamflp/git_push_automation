@@ -96,12 +96,24 @@ Vous verrez alors l’aide avec la liste des options disponibles.
 - Vous pouvez copier l'exemple fourni (`config.exemple.yaml`) pour créer votre propre fichier `config.yaml`.
 - Dans ce fichier, vous pouvez définir toutes les variables de configuration, comme les URLs de webhook, les tokens d'API, etc. Le script lira ce fichier pour configurer son comportement.
 
+### Langue du script
+
+Vous pouvez choisir la langue des messages affichés par le script en ajoutant le paramètre `language` à votre `config.yaml`. Les langues supportées sont :
+- `fr` (Français, valeur par défaut)
+- `en` (Anglais)
+
+Si le paramètre est omis, le français sera utilisé.
+
 Voici un exemple de structure pour votre `config.yaml`:
 
 ```yaml
 ########################################################################################
 # CONFIGURATION DU SCRIPT D'AUTOMATISATION PUSH GIT (Format YAML)
 ########################################################################################
+
+# Langue du script. Options: "fr" (français), "en" (anglais).
+# Si non spécifié, la valeur par défaut est "fr".
+language: "fr"
 
 # Paramétrage Slack
 slack:
